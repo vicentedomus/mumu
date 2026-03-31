@@ -1187,3 +1187,56 @@ a { color: var(--blue); text-decoration: none; }
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--surface-dim); border-radius: 2px; }
+
+/* =============================================
+   Responsive — Mobile vs Desktop
+   ============================================= */
+
+/* Default (mobile): hide desktop-only, show mobile-only */
+.desktop-only { display: none !important; }
+.mobile-only { display: block; }
+
+/* Desktop: >= 768px */
+@media (min-width: 768px) {
+  .desktop-only { display: flex !important; }
+  .mobile-only { display: none !important; }
+
+  /* Wider container */
+  #app {
+    max-width: 900px;
+    padding: 0 32px;
+  }
+
+  /* Modal sheet → centered dialog */
+  .modal-overlay {
+    align-items: center;
+  }
+  .modal-sheet {
+    max-width: 560px;
+    max-height: 85dvh;
+    border-radius: var(--r-xl);
+    margin: auto;
+  }
+  .modal-sheet::before {
+    display: none; /* No drag handle on desktop */
+  }
+
+  /* Stats grid can fit more columns */
+  .stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  /* Product cards in a grid */
+  #product-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+  #product-list .card { margin-bottom: 0; }
+
+  /* Wider variant table cells */
+  .variants-table td,
+  .variants-table th {
+    padding: 10px 10px;
+  }
+}

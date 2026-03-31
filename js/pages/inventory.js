@@ -695,22 +695,35 @@ function renderVariantsTable(variants, locations) {
                 }).join('')}
                 <td style="text-align:center"><span class="badge ${badgeClass}" style="font-size:0.68rem">${v.total}</span></td>
                 <td style="position:relative">
-                  <button class="btn-icon variant-menu-btn" data-variant-id="${v.id}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
-                  </button>
-                  <div class="variant-actions-popup" id="vap-${v.id}">
-                    <button class="variant-action-item action-add-stock" data-variant-id="${v.id}">
+                  <div class="desktop-only" style="display:flex;gap:4px;justify-content:flex-end">
+                    <button class="btn-icon action-add-stock" data-variant-id="${v.id}" title="+ Stock">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                      Stock
                     </button>
-                    <button class="variant-action-item action-transfer" data-variant-id="${v.id}">
+                    <button class="btn-icon action-transfer" data-variant-id="${v.id}" title="Trasladar">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
-                      Trasladar
                     </button>
-                    <button class="variant-action-item action-sell" data-variant-id="${v.id}">
+                    <button class="btn-icon btn-icon-primary action-sell" data-variant-id="${v.id}" title="Vender">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                      Vender
                     </button>
+                  </div>
+                  <div class="mobile-only">
+                    <button class="btn-icon variant-menu-btn" data-variant-id="${v.id}">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                    </button>
+                    <div class="variant-actions-popup" id="vap-${v.id}">
+                      <button class="variant-action-item action-add-stock" data-variant-id="${v.id}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        Stock
+                      </button>
+                      <button class="variant-action-item action-transfer" data-variant-id="${v.id}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+                        Trasladar
+                      </button>
+                      <button class="variant-action-item action-sell" data-variant-id="${v.id}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                        Vender
+                      </button>
+                    </div>
                   </div>
                 </td>
               </tr>
