@@ -440,7 +440,11 @@ async function loadMovements(product, variants, sb) {
   }
 
   const typeIcons = {
-    ingreso: '📦', venta: '💰', traslado: '🔄', devolucion: '↩️', ajuste: '🔧'
+    ingreso: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>',
+    venta: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+    traslado: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>',
+    devolucion: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>',
+    ajuste: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>'
   };
   const typeLabels = {
     ingreso: 'Ingreso', venta: 'Venta', traslado: 'Traslado', devolucion: 'Devolución', ajuste: 'Ajuste'
@@ -453,7 +457,7 @@ async function loadMovements(product, variants, sb) {
       : m.from_location?.name || m.to_location?.name || '';
     return `
       <div class="list-item">
-        <div style="font-size:1.2rem;width:28px">${typeIcons[m.type] || '📋'}</div>
+        <div class="movement-icon movement-icon-${m.type}">${typeIcons[m.type] || ''}</div>
         <div class="list-item-content">
           <div class="list-item-title">${typeLabels[m.type] || m.type} · x${m.quantity}</div>
           <div class="list-item-sub">${variant ? variant.color + ' ' + variant.size : ''} · ${locInfo}</div>

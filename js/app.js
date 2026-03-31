@@ -11,6 +11,8 @@
 
   // Mostrar shell de la app
   document.getElementById('bottom-nav').classList.remove('hidden');
+  document.querySelector('.page-header').classList.remove('hidden');
+  document.body.style.paddingBottom = '';
 
   // Nav clicks
   document.querySelectorAll('.nav-item').forEach(btn => {
