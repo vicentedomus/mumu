@@ -76,6 +76,15 @@ function renderProductCard(p) {
   const variants = (p.product_variants || []).length;
   const colors = [...new Set((p.product_variants || []).map(v => v.color))];
 
+  // Stock por ubicación
+  const stockByLoc = {};
+  (p.product_variants || []).forEach(v => {
+    (v.inventory || []).forEach(inv => {
+      const locName = inv.locations?.name || '?';
+      stockByLoc[locName] = (stockByLoc[locName] || 0) + inv.quantity;
+    });
+  });
+
   return `
     <div class="card product-card" data-id="${p.id}" data-name="${p.name.toLowerCase()}">
       <div class="flex-between">
@@ -93,6 +102,16 @@ function renderProductCard(p) {
           </span>
         </div>
       </div>
+      ${Object.keys(stockByLoc).length > 0 ? `
+        <div class="stock-locations mt-8">
+          ${Object.entries(stockByLoc).map(([loc, qty]) => `
+            <div class="stock-loc-item" style="padding:6px 10px">
+              <span class="text-sm text-muted" style="font-size:0.7rem">${loc}</span>
+              <strong style="font-size:0.9rem">${qty}</strong>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
     </div>
   `;
 }
