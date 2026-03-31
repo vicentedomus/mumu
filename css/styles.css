@@ -547,6 +547,45 @@ h3 { font-size: 1.1rem; }
   margin-right: 4px;
 }
 
+/* ========== Chip selector ========== */
+.chip-selector, .chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-white);
+  color: var(--color-text-light);
+  cursor: pointer;
+  transition: all var(--transition);
+  -webkit-tap-highlight-color: transparent;
+}
+.chip-active {
+  background: var(--color-accent);
+  color: white;
+  border-color: var(--color-accent);
+}
+.chip-removable {
+  padding-right: 8px;
+}
+.chip-x {
+  font-size: 1.1rem;
+  line-height: 1;
+  margin-left: 2px;
+  cursor: pointer;
+  opacity: 0.8;
+}
+.chip-x:hover {
+  opacity: 1;
+}
+
 /* ========== Stock by location ========== */
 .stock-locations {
   display: flex;

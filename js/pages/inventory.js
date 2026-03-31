@@ -114,9 +114,15 @@ function addFAB(onClick) {
 // ============================================
 // Formulario crear/editar producto
 // ============================================
+const ALL_SIZES = ['única', '0-3', '3-6', '6-9', '9-12', '12-18', '18-24'];
+
 function openProductForm(product, container, sb) {
   const isEdit = !!product;
   const title = isEdit ? 'Editar producto' : 'Nuevo producto';
+
+  // Extraer tallas y colores existentes
+  const existingSizes = isEdit ? [...new Set((product.product_variants || []).map(v => v.size))] : [];
+  const existingColors = isEdit ? [...new Set((product.product_variants || []).map(v => v.color))] : [];
 
   const html = `
     <form id="product-form">
@@ -140,40 +146,96 @@ function openProductForm(product, container, sb) {
       </div>
 
       <div class="section-divider mt-16 mb-16">
-        <span class="section-label">Variantes (talla + color)</span>
+        <span class="section-label">Tallas</span>
+      </div>
+      <div class="chip-selector" id="size-selector">
+        ${ALL_SIZES.map(s => `<button type="button" class="chip ${existingSizes.includes(s) ? 'chip-active' : ''}" data-value="${s}">${s}</button>`).join('')}
       </div>
 
-      <div id="variants-container">
-        ${isEdit && product.product_variants ? product.product_variants.map((v, i) => variantRowHTML(i, v)).join('') : variantRowHTML(0)}
+      <div class="section-divider mt-16 mb-16">
+        <span class="section-label">Colores</span>
       </div>
-      <button type="button" class="btn btn-outline btn-sm mt-8" id="add-variant-btn">+ Agregar variante</button>
+      <div class="chip-list" id="color-list">
+        ${existingColors.map(c => `<span class="chip chip-active chip-removable" data-value="${c}">${c} <span class="chip-x">&times;</span></span>`).join('')}
+      </div>
+      <div class="form-row mt-8">
+        <div class="form-group" style="flex:1;margin-bottom:0">
+          <input type="text" id="color-input" placeholder="Agregar color (ej: rosa)">
+        </div>
+        <button type="button" class="btn btn-sm btn-outline" id="add-color-btn">+</button>
+      </div>
 
-      <button type="submit" class="btn btn-primary btn-full mt-16">${isEdit ? 'Guardar cambios' : 'Crear producto'}</button>
+      <div class="section-divider mt-16 mb-8">
+        <span class="section-label">Preview de variantes</span>
+      </div>
+      <div id="variants-preview" class="text-sm text-muted mb-16"></div>
+
+      <button type="submit" class="btn btn-primary btn-full">${isEdit ? 'Guardar cambios' : 'Crear producto'}</button>
       ${isEdit ? '<button type="button" class="btn btn-outline btn-full mt-8 text-danger" id="delete-product-btn">Eliminar producto</button>' : ''}
     </form>
   `;
 
   const body = UI.openSheet(title, html);
-  let variantCount = isEdit ? (product.product_variants?.length || 1) : 1;
 
-  // Agregar variante
-  document.getElementById('add-variant-btn').addEventListener('click', () => {
-    const vc = document.getElementById('variants-container');
-    vc.insertAdjacentHTML('beforeend', variantRowHTML(variantCount));
-    variantCount++;
+  // --- Tallas: toggle chips ---
+  document.getElementById('size-selector').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    chip.classList.toggle('chip-active');
+    updateVariantsPreview();
   });
 
-  // Eliminar variante
-  body.addEventListener('click', (e) => {
-    if (e.target.closest('.remove-variant')) {
-      const row = e.target.closest('.variant-row');
-      if (document.querySelectorAll('.variant-row').length > 1) {
-        row.remove();
-      }
+  // --- Colores: agregar/quitar ---
+  const addColor = () => {
+    const input = document.getElementById('color-input');
+    const color = input.value.trim().toLowerCase();
+    if (!color) return;
+    // No duplicar
+    const existing = document.querySelectorAll('#color-list .chip');
+    for (const c of existing) { if (c.dataset.value === color) return; }
+    document.getElementById('color-list').insertAdjacentHTML('beforeend',
+      `<span class="chip chip-active chip-removable" data-value="${color}">${color} <span class="chip-x">&times;</span></span>`
+    );
+    input.value = '';
+    updateVariantsPreview();
+  };
+
+  document.getElementById('add-color-btn').addEventListener('click', addColor);
+  document.getElementById('color-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addColor(); }
+  });
+
+  document.getElementById('color-list').addEventListener('click', (e) => {
+    if (e.target.classList.contains('chip-x')) {
+      e.target.closest('.chip').remove();
+      updateVariantsPreview();
     }
   });
 
-  // Submit
+  // --- Preview de variantes ---
+  function getSelectedSizes() {
+    return [...document.querySelectorAll('#size-selector .chip-active')].map(c => c.dataset.value);
+  }
+  function getSelectedColors() {
+    return [...document.querySelectorAll('#color-list .chip')].map(c => c.dataset.value);
+  }
+  function updateVariantsPreview() {
+    const sizes = getSelectedSizes();
+    const colors = getSelectedColors();
+    const preview = document.getElementById('variants-preview');
+    if (sizes.length === 0 && colors.length === 0) {
+      preview.innerHTML = 'Selecciona al menos una talla o color';
+      return;
+    }
+    const s = sizes.length > 0 ? sizes : ['única'];
+    const c = colors.length > 0 ? colors : ['único'];
+    const combos = [];
+    s.forEach(size => c.forEach(color => combos.push(`${color} / ${size}`)));
+    preview.innerHTML = `<strong>${combos.length}</strong> variante${combos.length !== 1 ? 's' : ''}: ${combos.join(', ')}`;
+  }
+  updateVariantsPreview();
+
+  // --- Submit ---
   document.getElementById('product-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('pf-name').value.trim();
@@ -181,27 +243,23 @@ function openProductForm(product, container, sb) {
     const sale_price = parseFloat(document.getElementById('pf-price').value) || 0;
     const image_url = document.getElementById('pf-image').value.trim() || null;
 
-    // Recoger variantes
-    const variantRows = document.querySelectorAll('.variant-row');
-    const variants = [];
-    variantRows.forEach(row => {
-      const size = row.querySelector('.vr-size').value.trim() || 'única';
-      const color = row.querySelector('.vr-color').value.trim() || 'único';
-      const existingId = row.dataset.variantId || null;
-      variants.push({ size, color, id: existingId });
-    });
+    const sizes = getSelectedSizes();
+    const colors = getSelectedColors();
+    const s = sizes.length > 0 ? sizes : ['única'];
+    const c = colors.length > 0 ? colors : ['único'];
 
     if (isEdit) {
-      // Actualizar producto
+      // Actualizar datos del producto
       const { error } = await sb.from('products').update({ name, cost, sale_price, image_url }).eq('id', product.id);
       if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
 
-      // Agregar variantes nuevas (las que no tienen id)
-      for (const v of variants) {
-        if (!v.id) {
-          await sb.from('product_variants').insert({
-            product_id: product.id, size: v.size, color: v.color, sku: ''
-          });
+      // Crear variantes nuevas (las que no existían)
+      const existingCombos = (product.product_variants || []).map(v => `${v.size}|${v.color}`);
+      for (const size of s) {
+        for (const color of c) {
+          if (!existingCombos.includes(`${size}|${color}`)) {
+            await sb.from('product_variants').insert({ product_id: product.id, size, color, sku: '' });
+          }
         }
       }
     } else {
@@ -209,11 +267,11 @@ function openProductForm(product, container, sb) {
       const { data: newProd, error } = await sb.from('products').insert({ name, cost, sale_price, image_url, code: '' }).select().single();
       if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
 
-      // Crear variantes
-      for (const v of variants) {
-        await sb.from('product_variants').insert({
-          product_id: newProd.id, size: v.size, color: v.color, sku: ''
-        });
+      // Crear todas las variantes (producto cartesiano)
+      for (const size of s) {
+        for (const color of c) {
+          await sb.from('product_variants').insert({ product_id: newProd.id, size, color, sku: '' });
+        }
       }
     }
 
@@ -233,28 +291,6 @@ function openProductForm(product, container, sb) {
       await renderProductList(container, sb);
     });
   }
-}
-
-function variantRowHTML(index, variant = null) {
-  return `
-    <div class="variant-row" data-variant-id="${variant?.id || ''}">
-      <div class="form-row">
-        <div class="form-group" style="flex:1">
-          <label>Talla</label>
-          <select class="vr-size">
-            ${['única', '0-3', '3-6', '6-9', '9-12', '12-18', '18-24'].map(s =>
-              `<option value="${s}" ${variant?.size === s ? 'selected' : ''}>${s}</option>`
-            ).join('')}
-          </select>
-        </div>
-        <div class="form-group" style="flex:1">
-          <label>Color</label>
-          <input type="text" class="vr-color" value="${variant?.color || ''}" placeholder="Ej: rosa">
-        </div>
-        <button type="button" class="remove-variant" title="Quitar">&times;</button>
-      </div>
-    </div>
-  `;
 }
 
 // ============================================
