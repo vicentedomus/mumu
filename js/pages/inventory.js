@@ -252,7 +252,33 @@ function openProductForm(product, container, sb) {
     s.forEach(size => c.forEach(color => combos.push({ size, color })));
 
     if (isEdit) {
-      preview.innerHTML = `<p class="text-sm text-muted"><strong>${combos.length}</strong> variante${combos.length !== 1 ? 's' : ''}: ${combos.map(v => v.color + ' / ' + v.size).join(', ')}</p>`;
+      // Mostrar variantes existentes con stock actual editable
+      const existingVariants = product.product_variants || [];
+      preview.innerHTML = `
+        <p class="text-sm text-secondary mb-8"><strong>${existingVariants.length}</strong> variante${existingVariants.length !== 1 ? 's' : ''} existentes</p>
+        ${existingVariants.map(v => {
+          const currentStock = (v.inventory || []).reduce((s, i) => s + i.quantity, 0);
+          return `
+            <div class="flex-between mb-8" style="gap:8px">
+              <span class="text-sm" style="flex:1;min-width:0"><strong>${v.color}</strong> · ${v.size} <span class="text-muted">(actual: ${currentStock})</span></span>
+              <input type="number" class="stock-edit-input" data-variant-id="${v.id}" data-current="${currentStock}"
+                min="0" value="${currentStock}" placeholder="0"
+                style="width:70px;padding:8px;text-align:center;font-size:0.85rem;border-radius:var(--r-sm);border:none;background:var(--surface-high);box-shadow:var(--clay-inner)">
+            </div>
+          `;
+        }).join('')}
+        ${combos.filter(cb => !existingVariants.find(v => v.size === cb.size && v.color === cb.color)).length > 0 ? `
+          <p class="text-sm text-secondary mt-16 mb-8">Nuevas variantes</p>
+          ${combos.filter(cb => !existingVariants.find(v => v.size === cb.size && v.color === cb.color)).map(v => `
+            <div class="flex-between mb-8" style="gap:8px">
+              <span class="text-sm" style="flex:1;min-width:0"><strong>${v.color}</strong> · ${v.size} <span class="text-muted">(nueva)</span></span>
+              <input type="number" class="stock-initial-input" data-size="${v.size}" data-color="${v.color}"
+                min="0" value="0" placeholder="0"
+                style="width:70px;padding:8px;text-align:center;font-size:0.85rem;border-radius:var(--r-sm);border:none;background:var(--surface-high);box-shadow:var(--clay-inner)">
+            </div>
+          `).join('')}
+        ` : ''}
+      `;
     } else {
       preview.innerHTML = `
         <p class="text-sm text-secondary mb-8"><strong>${combos.length}</strong> variante${combos.length !== 1 ? 's' : ''}</p>
@@ -283,6 +309,70 @@ function openProductForm(product, container, sb) {
     const c = colors.length > 0 ? colors : ['único'];
 
     if (isEdit) {
+      // Detectar cambios de stock
+      const stockChanges = [];
+      document.querySelectorAll('.stock-edit-input').forEach(input => {
+        const variantId = input.dataset.variantId;
+        const current = parseInt(input.dataset.current) || 0;
+        const newQty = parseInt(input.value) || 0;
+        if (newQty !== current) {
+          stockChanges.push({ variantId, current, newQty, diff: newQty - current });
+        }
+      });
+
+      // Si hay cambios de stock, pedir nota antes de continuar
+      if (stockChanges.length > 0) {
+        const note = await new Promise((resolve) => {
+          UI.closeSheet();
+          const noteHtml = `
+            <p class="text-sm text-secondary mb-16">Estás ajustando stock en ${stockChanges.length} variante${stockChanges.length > 1 ? 's' : ''}. ¿Por qué?</p>
+            <div class="form-group">
+              <label>Nota del ajuste *</label>
+              <input type="text" id="adjust-note" required placeholder="Ej: Conteo físico, corrección, etc.">
+            </div>
+            <div class="flex gap-8">
+              <button class="btn btn-outline btn-full" id="adjust-cancel">Cancelar</button>
+              <button class="btn btn-primary btn-full" id="adjust-confirm">Confirmar</button>
+            </div>
+          `;
+          UI.openSheet('Ajuste de stock', noteHtml);
+          document.getElementById('adjust-cancel').addEventListener('click', () => { UI.closeSheet(); resolve(null); });
+          document.getElementById('adjust-confirm').addEventListener('click', () => {
+            const val = document.getElementById('adjust-note').value.trim();
+            if (!val) { UI.toast('Escribe una nota', 'error'); return; }
+            UI.closeSheet();
+            resolve(val);
+          });
+        });
+
+        if (!note) return; // Cancelado
+
+        // Aplicar cambios de stock
+        const { data: casaLoc } = await sb.from('locations').select('id').eq('name', 'Casa').single();
+        for (const change of stockChanges) {
+          if (!casaLoc) continue;
+          const { data: existing } = await sb.from('inventory')
+            .select('id, quantity').eq('variant_id', change.variantId).eq('location_id', casaLoc.id).single();
+
+          if (existing) {
+            await sb.from('inventory').update({ quantity: change.newQty, updated_at: new Date().toISOString() }).eq('id', existing.id);
+          } else if (change.newQty > 0) {
+            await sb.from('inventory').insert({ variant_id: change.variantId, location_id: casaLoc.id, quantity: change.newQty });
+          }
+
+          // Registrar movimiento de ajuste
+          const movType = change.diff > 0 ? 'ingreso' : 'ajuste';
+          await sb.from('inventory_movements').insert({
+            variant_id: change.variantId,
+            to_location_id: change.diff > 0 ? casaLoc.id : null,
+            from_location_id: change.diff < 0 ? casaLoc.id : null,
+            quantity: Math.abs(change.diff),
+            type: 'ajuste',
+            notes: note
+          });
+        }
+      }
+
       // Actualizar datos del producto
       const { error } = await sb.from('products').update({ name, cost, sale_price, product_url }).eq('id', product.id);
       if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
@@ -292,7 +382,19 @@ function openProductForm(product, container, sb) {
       for (const size of s) {
         for (const color of c) {
           if (!existingCombos.includes(`${size}|${color}`)) {
-            await sb.from('product_variants').insert({ product_id: product.id, size, color, sku: '' });
+            const { data: newVar } = await sb.from('product_variants').insert({ product_id: product.id, size, color, sku: '' }).select().single();
+            // Stock inicial para variante nueva
+            if (newVar) {
+              const input = document.querySelector(`.stock-initial-input[data-size="${size}"][data-color="${color}"]`);
+              const qty = parseInt(input?.value) || 0;
+              if (qty > 0) {
+                const { data: casaLoc } = await sb.from('locations').select('id').eq('name', 'Casa').single();
+                if (casaLoc) {
+                  await sb.from('inventory').insert({ variant_id: newVar.id, location_id: casaLoc.id, quantity: qty });
+                  await sb.from('inventory_movements').insert({ variant_id: newVar.id, to_location_id: casaLoc.id, quantity: qty, type: 'ingreso', notes: 'Stock inicial' });
+                }
+              }
+            }
           }
         }
       }
