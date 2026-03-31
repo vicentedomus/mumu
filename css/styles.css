@@ -804,6 +804,46 @@ a { color: var(--blue); text-decoration: none; }
   background: var(--blue-dark);
 }
 
+/* Variant actions popup */
+.variant-actions-popup {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 20;
+  background: var(--surface-lowest);
+  border-radius: var(--r-sm);
+  box-shadow: var(--clay-float);
+  border: 1.5px solid rgba(194, 199, 209, 0.15);
+  overflow: hidden;
+  min-width: 140px;
+}
+.variant-actions-popup.show { display: block; }
+.variant-action-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: none;
+  font-family: 'Nunito Sans', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--dur) var(--ease);
+}
+.variant-action-item:active { background: var(--surface-container); }
+.variant-action-item + .variant-action-item { border-top: 1px solid rgba(194, 199, 209, 0.10); }
+.variant-action-item svg {
+  width: 16px;
+  height: 16px;
+  stroke: var(--text-secondary);
+  flex-shrink: 0;
+}
+
 /* ========== Sale Preview ========== */
 .sale-preview {
   background: var(--surface-container);

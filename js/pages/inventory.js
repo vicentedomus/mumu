@@ -694,16 +694,22 @@ function renderVariantsTable(variants, locations) {
                   return `<td style="text-align:center"><span class="${qty === 0 ? 'text-muted' : ''}">${qty}</span></td>`;
                 }).join('')}
                 <td style="text-align:center"><span class="badge ${badgeClass}" style="font-size:0.68rem">${v.total}</span></td>
-                <td>
-                  <div style="display:flex;gap:4px;justify-content:flex-end">
-                    <button class="btn-icon action-add-stock" data-variant-id="${v.id}" title="+ Stock">
+                <td style="position:relative">
+                  <button class="btn-icon variant-menu-btn" data-variant-id="${v.id}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                  </button>
+                  <div class="variant-actions-popup" id="vap-${v.id}">
+                    <button class="variant-action-item action-add-stock" data-variant-id="${v.id}">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      Stock
                     </button>
-                    <button class="btn-icon action-transfer" data-variant-id="${v.id}" title="Trasladar">
+                    <button class="variant-action-item action-transfer" data-variant-id="${v.id}">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+                      Trasladar
                     </button>
-                    <button class="btn-icon btn-icon-primary action-sell" data-variant-id="${v.id}" title="Vender">
+                    <button class="variant-action-item action-sell" data-variant-id="${v.id}">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                      Vender
                     </button>
                   </div>
                 </td>
@@ -717,6 +723,25 @@ function renderVariantsTable(variants, locations) {
 }
 
 function bindVariantActions(body, locations, product, variants, container, sb) {
+  // Menu toggle
+  body.querySelectorAll('.variant-menu-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const vid = btn.dataset.variantId;
+      const popup = document.getElementById(`vap-${vid}`);
+      // Close all other popups
+      body.querySelectorAll('.variant-actions-popup.show').forEach(p => { if (p !== popup) p.classList.remove('show'); });
+      popup.classList.toggle('show');
+    });
+  });
+
+  // Close popups on outside click
+  body.addEventListener('click', (e) => {
+    if (!e.target.closest('.variant-menu-btn') && !e.target.closest('.variant-actions-popup')) {
+      body.querySelectorAll('.variant-actions-popup.show').forEach(p => p.classList.remove('show'));
+    }
+  });
+
   body.querySelectorAll('.action-add-stock').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();

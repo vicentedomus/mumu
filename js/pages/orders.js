@@ -121,7 +121,7 @@ async function openOrderDetail(order, container, sb) {
         <div class="list-item-content">
           <div class="list-item-title">${i.product_variants?.products?.name || 'Producto'}</div>
           <div class="list-item-sub">${i.product_variants?.color || ''} · ${i.product_variants?.size || ''}</div>
-          ${i.source_url ? `<a href="${i.source_url}" target="_blank" class="text-sm text-accent" style="display:inline-block;margin-top:2px">Ver en tienda ↗</a>` : ''}
+          ${i.source_url ? i.source_url.split('\n').map((url, idx) => `<a href="${url}" target="_blank" class="text-sm text-accent" style="display:inline-block;margin-top:2px">Link ${i.source_url.includes('\n') ? (idx + 1) : ''} ↗</a>`).join(' ') : ''}
         </div>
         <div class="list-item-right">
           <strong>x${i.quantity}</strong>
@@ -309,8 +309,15 @@ async function openNewOrderForm(container, sb) {
           </div>
           <button type="button" class="remove-variant oi-remove" data-idx="${idx}" style="margin-bottom:0">&times;</button>
         </div>
-        <div class="form-group" style="margin-top:8px;margin-bottom:0">
-          <input type="url" class="oi-source-url" data-idx="${idx}" placeholder="Link del producto (Temu, Shein, etc.)">
+        <div class="oi-links-container" data-idx="${idx}" style="margin-top:8px">
+          <div class="form-row" style="gap:6px;margin-bottom:0">
+            <div class="form-group" style="flex:1;margin-bottom:0">
+              <input type="url" class="oi-source-url" data-idx="${idx}" placeholder="Link del producto (Temu, Shein...)">
+            </div>
+            <button type="button" class="btn-icon oi-add-link" data-idx="${idx}" title="Agregar otro link" style="margin-bottom:0;flex-shrink:0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
         </div>
       </div>
     `);
@@ -403,6 +410,34 @@ async function openNewOrderForm(container, sb) {
         updateOrderTotal();
       }
     }
+    // Agregar otro link
+    if (e.target.closest('.oi-add-link')) {
+      const btn = e.target.closest('.oi-add-link');
+      const container = btn.closest('.oi-links-container');
+      container.insertAdjacentHTML('beforeend', `
+        <div class="form-row mt-8" style="gap:6px;margin-bottom:0">
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <input type="url" class="oi-source-url" placeholder="Otro link...">
+          </div>
+          <button type="button" class="btn-icon oi-remove-link" title="Quitar" style="margin-bottom:0;flex-shrink:0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      `);
+      // Ocultar botón "+" del primer link (solo uno por fila)
+      btn.style.display = 'none';
+    }
+    // Quitar link extra
+    if (e.target.closest('.oi-remove-link')) {
+      const linkRow = e.target.closest('.form-row');
+      const container = linkRow.closest('.oi-links-container');
+      linkRow.remove();
+      // Mostrar botón "+" de nuevo si solo queda un link
+      if (container.querySelectorAll('.oi-source-url').length <= 1) {
+        const addBtn = container.querySelector('.oi-add-link');
+        if (addBtn) addBtn.style.display = '';
+      }
+    }
   });
 
   document.getElementById('no-shipping').addEventListener('input', updateOrderTotal);
@@ -448,7 +483,9 @@ async function openNewOrderForm(container, sb) {
       const variantId = row.querySelector('.oi-variant')?.value;
       const qty = parseInt(row.querySelector('.oi-qty')?.value) || 0;
       const cost = parseFloat(row.querySelector('.oi-cost')?.value) || 0;
-      const source_url = row.querySelector('.oi-source-url')?.value.trim() || null;
+      // Recoger todos los links del ítem
+      const links = [...row.querySelectorAll('.oi-source-url')].map(i => i.value.trim()).filter(Boolean);
+      const source_url = links.length > 0 ? links.join('\n') : null;
       if (variantId && qty > 0) {
         items.push({ variant_id: variantId, quantity: qty, unit_cost: cost, source_url });
         productTotal += qty * cost;
