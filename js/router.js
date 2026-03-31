@@ -20,6 +20,12 @@ const Router = {
       item.classList.toggle('active', item.dataset.route === hash);
     });
 
+    // Limpiar FAB y modales al cambiar de página
+    const fab = document.getElementById('fab-main');
+    if (fab) fab.remove();
+    const overlay = document.getElementById('modal-overlay');
+    if (overlay) overlay.remove();
+
     // Cargar página
     const container = document.getElementById('page-content');
     container.classList.add('page-exit');

@@ -477,3 +477,138 @@ h3 { font-size: 1.1rem; }
 .flex-between { display: flex; justify-content: space-between; align-items: center; }
 .gap-8 { gap: 8px; }
 .hidden { display: none !important; }
+
+/* ========== Form rows (side by side) ========== */
+.form-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+.form-row .form-group {
+  flex: 1;
+}
+
+/* ========== Section dividers ========== */
+.section-divider {
+  position: relative;
+  text-align: center;
+}
+.section-divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--color-border);
+}
+.section-label {
+  position: relative;
+  background: var(--color-white);
+  padding: 0 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-light);
+}
+
+/* ========== Variant rows ========== */
+.variant-row {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.variant-row:last-child {
+  border-bottom: none;
+}
+.variant-row .form-row {
+  align-items: center;
+}
+.remove-variant {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  color: var(--color-danger);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-bottom: 16px;
+}
+
+/* ========== Color tags ========== */
+.color-tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  background: var(--color-subtle);
+  color: var(--color-text);
+  margin-right: 4px;
+}
+
+/* ========== Stock by location ========== */
+.stock-locations {
+  display: flex;
+  gap: 16px;
+}
+.stock-loc-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+/* ========== Variant actions ========== */
+.variant-actions {
+  display: flex;
+  gap: 8px;
+}
+.variant-actions .btn {
+  flex: 1;
+  font-size: 0.8rem;
+  padding: 6px 8px;
+}
+
+/* ========== Variant detail card ========== */
+.variant-detail-card {
+  margin-bottom: 8px;
+}
+
+/* ========== Sale preview ========== */
+.sale-preview {
+  background: var(--color-bg);
+  font-size: 0.9rem;
+}
+.sale-preview .flex-between {
+  padding: 4px 0;
+}
+
+/* ========== Toast ========== */
+.toast {
+  position: fixed;
+  bottom: calc(var(--nav-height) + var(--safe-bottom) + 80px);
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  padding: 10px 24px;
+  border-radius: 24px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  z-index: 300;
+  opacity: 0;
+  transition: all 0.3s ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.toast-show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.toast-success {
+  background: var(--color-success-dark);
+  color: white;
+}
+.toast-error {
+  background: var(--color-danger);
+  color: white;
+}
