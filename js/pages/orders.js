@@ -264,11 +264,21 @@ async function openNewOrderForm(container, sb) {
             ${(products || []).map(p => `<option value="${p.id}" data-cost="${p.cost}">${p.name} ($${p.cost} c/u)</option>`).join('')}
           </select>
         </div>
-        <div class="form-group" style="margin-bottom:10px">
-          <select class="oi-variant" data-idx="${idx}" disabled>
-            <option value="">Primero selecciona producto</option>
-          </select>
+        <div class="form-row" style="margin-bottom:10px">
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <label style="font-size:0.7rem">Talla</label>
+            <select class="oi-size" data-idx="${idx}" disabled>
+              <option value="">—</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <label style="font-size:0.7rem">Color</label>
+            <select class="oi-color" data-idx="${idx}" disabled>
+              <option value="">—</option>
+            </select>
+          </div>
         </div>
+        <input type="hidden" class="oi-variant" data-idx="${idx}" value="">
         <div class="form-row">
           <div class="form-group" style="flex:1;margin-bottom:0">
             <input type="number" class="oi-qty" data-idx="${idx}" min="1" value="1" placeholder="Cant.">
@@ -287,27 +297,52 @@ async function openNewOrderForm(container, sb) {
 
   document.getElementById('add-order-item').addEventListener('click', addItemRow);
 
+  // Resolver variante desde talla+color
+  function resolveVariant(idx) {
+    const productId = document.querySelector(`.oi-product[data-idx="${idx}"]`)?.value;
+    const size = document.querySelector(`.oi-size[data-idx="${idx}"]`)?.value;
+    const color = document.querySelector(`.oi-color[data-idx="${idx}"]`)?.value;
+    const hiddenInput = document.querySelector(`.oi-variant[data-idx="${idx}"]`);
+    if (!productId || !size || !color) { hiddenInput.value = ''; return; }
+    const product = products.find(p => p.id === productId);
+    const variant = (product?.product_variants || []).find(v => v.size === size && v.color === color);
+    hiddenInput.value = variant ? variant.id : '';
+  }
+
   // Delegated events para los ítems
   document.getElementById('order-items-container').addEventListener('change', (e) => {
     if (e.target.classList.contains('oi-product')) {
       const idx = e.target.dataset.idx;
       const productId = e.target.value;
-      const variantSelect = document.querySelector(`.oi-variant[data-idx="${idx}"]`);
+      const sizeSelect = document.querySelector(`.oi-size[data-idx="${idx}"]`);
+      const colorSelect = document.querySelector(`.oi-color[data-idx="${idx}"]`);
       const costInput = document.querySelector(`.oi-cost[data-idx="${idx}"]`);
 
       if (!productId) {
-        variantSelect.innerHTML = '<option value="">Primero selecciona producto</option>';
-        variantSelect.disabled = true;
+        sizeSelect.innerHTML = '<option value="">—</option>';
+        sizeSelect.disabled = true;
+        colorSelect.innerHTML = '<option value="">—</option>';
+        colorSelect.disabled = true;
         return;
       }
 
       const product = products.find(p => p.id === productId);
       costInput.value = product.cost;
-      variantSelect.innerHTML = (product.product_variants || []).map(v =>
-        `<option value="${v.id}">${v.color} · ${v.size}</option>`
-      ).join('');
-      variantSelect.disabled = false;
+
+      const sizes = [...new Set((product.product_variants || []).map(v => v.size))];
+      const colors = [...new Set((product.product_variants || []).map(v => v.color))];
+
+      sizeSelect.innerHTML = sizes.map(s => `<option value="${s}">${s}</option>`).join('');
+      sizeSelect.disabled = false;
+      colorSelect.innerHTML = colors.map(c => `<option value="${c}">${c}</option>`).join('');
+      colorSelect.disabled = false;
+
+      resolveVariant(idx);
       updateOrderTotal();
+    }
+
+    if (e.target.classList.contains('oi-size') || e.target.classList.contains('oi-color')) {
+      resolveVariant(e.target.dataset.idx);
     }
   });
 
