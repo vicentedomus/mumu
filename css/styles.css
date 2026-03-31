@@ -736,6 +736,74 @@ a { color: var(--blue); text-decoration: none; }
 .variant-detail-card { margin-bottom: 10px; cursor: default; }
 .variant-detail-card:active { transform: none; box-shadow: var(--clay-card); }
 
+/* ========== Variants Table ========== */
+.variants-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.82rem;
+}
+.variants-table th {
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.65rem;
+  padding: 8px 6px;
+  text-align: left;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+.variants-table td {
+  padding: 10px 6px;
+  vertical-align: middle;
+}
+.variants-table tbody tr {
+  transition: background var(--dur) var(--ease);
+}
+.variants-table tbody tr:nth-child(even) {
+  background: rgba(241, 237, 232, 0.5);
+}
+.variants-table tbody tr:hover {
+  background: var(--surface-container);
+}
+
+/* Icon buttons for table actions */
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  border: none;
+  background: var(--surface-high);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+  -webkit-tap-highlight-color: transparent;
+  padding: 0;
+  flex-shrink: 0;
+}
+.btn-icon svg {
+  width: 14px;
+  height: 14px;
+  stroke: var(--text-secondary);
+}
+.btn-icon:active {
+  transform: scale(0.9);
+  background: var(--surface-highest);
+}
+.btn-icon-primary {
+  background: var(--blue);
+}
+.btn-icon-primary svg {
+  stroke: white;
+}
+.btn-icon-primary:active {
+  background: var(--blue-dark);
+}
+
 /* ========== Sale Preview ========== */
 .sale-preview {
   background: var(--surface-container);

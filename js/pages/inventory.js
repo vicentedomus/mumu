@@ -459,16 +459,12 @@ function openProductForm(product, container, sb) {
 }
 
 // ============================================
-// Detalle de producto — stock por ubicación, acciones
+// Detalle de producto — tabla de variantes
 // ============================================
 async function openProductDetail(product, container, sb) {
-  // Recargar datos frescos con inventario por ubicación
   const { data: variants } = await sb
     .from('product_variants')
-    .select(`
-      id, size, color, sku,
-      inventory ( quantity, location_id, locations ( name, type ) )
-    `)
+    .select('id, size, color, sku, inventory ( quantity, location_id, locations ( name, type ) )')
     .eq('product_id', product.id)
     .eq('active', true);
 
@@ -477,12 +473,24 @@ async function openProductDetail(product, container, sb) {
   const margin = product.sale_price - product.cost;
   const marginPct = product.cost > 0 ? Math.round((margin / product.cost) * 100) : 0;
 
-  let html = `
+  // Preparar datos de variantes
+  const variantData = (variants || []).map(v => {
+    const stockByLoc = {};
+    let total = 0;
+    (v.inventory || []).forEach(inv => {
+      stockByLoc[inv.locations?.name || '?'] = inv.quantity;
+      total += inv.quantity;
+    });
+    return { ...v, stockByLoc, total };
+  });
+
+  const totalStock = variantData.reduce((s, v) => s + v.total, 0);
+
+  const html = `
     <div class="flex-between mb-16">
       <div>
-        <div class="text-sm text-muted">${product.code}</div>
-        <div class="text-sm mt-8">Costo: <strong>$${product.cost}</strong> · Venta: <strong>$${product.sale_price}</strong></div>
-        <div class="text-sm text-success">Margen: $${margin} (${marginPct}%)</div>
+        <div class="text-sm text-muted">${product.code} · ${variantData.length} variantes · ${totalStock} uds total</div>
+        <div class="text-sm mt-8">Costo: <strong>$${product.cost}</strong> · Venta: <strong>$${product.sale_price}</strong> · <span class="text-success">Margen: $${margin} (${marginPct}%)</span></div>
         ${product.product_url ? `<a href="${product.product_url}" target="_blank" class="text-sm text-accent mt-8" style="display:inline-block">Ver en tienda ↗</a>` : ''}
       </div>
       <div class="flex gap-8">
@@ -491,68 +499,61 @@ async function openProductDetail(product, container, sb) {
       </div>
     </div>
 
-    <div class="section-divider mb-8"><span class="section-label">Stock por variante</span></div>
-  `;
+    <div class="form-row mb-8" style="gap:8px">
+      <div class="form-group" style="flex:1;margin-bottom:0">
+        <input type="search" id="variant-search" placeholder="Buscar variante..." style="padding:10px 14px;font-size:0.85rem">
+      </div>
+      <select id="variant-sort" style="padding:10px 12px;font-size:0.82rem;border:none;background:var(--surface-high);border-radius:var(--r-sm);box-shadow:var(--clay-inner);min-height:44px;font-family:inherit;color:var(--text)">
+        <option value="color">Por color</option>
+        <option value="size">Por talla</option>
+        <option value="stock-desc">Mayor stock</option>
+        <option value="stock-asc">Menor stock</option>
+      </select>
+    </div>
 
-  if (!variants || variants.length === 0) {
-    html += '<p class="text-muted text-sm">Sin variantes</p>';
-  } else {
-    variants.forEach(v => {
-      const stockByLoc = {};
-      let total = 0;
-      (v.inventory || []).forEach(inv => {
-        stockByLoc[inv.locations?.name || '?'] = inv.quantity;
-        total += inv.quantity;
-      });
+    <div id="variants-table-container">
+      ${renderVariantsTable(variantData, locations)}
+    </div>
 
-      html += `
-        <div class="card variant-detail-card">
-          <div class="flex-between">
-            <div>
-              <strong>${v.color}</strong> · ${v.size}
-              <div class="text-sm text-muted">${v.sku}</div>
-            </div>
-            <div class="text-right">
-              <span class="badge ${total === 0 ? 'badge-low' : 'badge-stock'}">${total} uds</span>
-            </div>
-          </div>
-          <div class="stock-locations mt-8">
-            ${locations.map(loc => {
-              const qty = stockByLoc[loc.name] || 0;
-              return `<div class="stock-loc-item">
-                <span class="text-sm">${loc.name}</span>
-                <span class="text-sm"><strong>${qty}</strong></span>
-              </div>`;
-            }).join('')}
-          </div>
-          <div class="variant-actions mt-8">
-            <button class="btn btn-sm btn-outline action-add-stock" data-variant-id="${v.id}">+ Stock</button>
-            <button class="btn btn-sm btn-outline action-transfer" data-variant-id="${v.id}">Trasladar</button>
-            <button class="btn btn-sm btn-primary action-sell" data-variant-id="${v.id}">Vender</button>
-          </div>
-        </div>
-      `;
-    });
-  }
-
-  // Historial reciente
-  html += `
     <div class="section-divider mt-16 mb-8"><span class="section-label">Movimientos recientes</span></div>
     <div id="movements-list"></div>
   `;
 
   const body = UI.openSheet(product.name, html);
 
+  // Sort y búsqueda
+  let currentSort = 'color';
+  let currentSearch = '';
+
+  function filterAndSort() {
+    let filtered = variantData;
+    if (currentSearch) {
+      const q = currentSearch.toLowerCase();
+      filtered = filtered.filter(v => v.color.toLowerCase().includes(q) || v.size.toLowerCase().includes(q) || v.sku.toLowerCase().includes(q));
+    }
+    filtered = sortVariants(filtered, currentSort);
+    document.getElementById('variants-table-container').innerHTML = renderVariantsTable(filtered, locations);
+    bindVariantActions(body, locations, product, variantData, container, sb);
+  }
+
+  document.getElementById('variant-search').addEventListener('input', (e) => {
+    currentSearch = e.target.value;
+    filterAndSort();
+  });
+
+  document.getElementById('variant-sort').addEventListener('change', (e) => {
+    currentSort = e.target.value;
+    filterAndSort();
+  });
+
   // Cargar movimientos
   loadMovements(product, variants, sb);
 
-  // Edit
+  // Edit / Delete
   document.getElementById('edit-product-btn').addEventListener('click', () => {
     UI.closeSheet();
     openProductForm(product, container, sb);
   });
-
-  // Delete
   document.getElementById('delete-product-btn').addEventListener('click', async () => {
     const ok = await UI.confirm(`¿Eliminar "${product.name}"? Se eliminarán todas sus variantes y stock.`);
     if (!ok) return;
@@ -562,21 +563,83 @@ async function openProductDetail(product, container, sb) {
     await renderProductList(container, sb);
   });
 
-  // Acciones por variante
+  // Bind acciones iniciales
+  bindVariantActions(body, locations, product, variantData, container, sb);
+}
+
+function sortVariants(variants, sortBy) {
+  const sizeOrder = ['única', '0-3', '3-6', '6-9', '9-12', '12-18', '18-24'];
+  return [...variants].sort((a, b) => {
+    if (sortBy === 'color') return a.color.localeCompare(b.color) || sizeOrder.indexOf(a.size) - sizeOrder.indexOf(b.size);
+    if (sortBy === 'size') return sizeOrder.indexOf(a.size) - sizeOrder.indexOf(b.size) || a.color.localeCompare(b.color);
+    if (sortBy === 'stock-desc') return b.total - a.total;
+    if (sortBy === 'stock-asc') return a.total - b.total;
+    return 0;
+  });
+}
+
+function renderVariantsTable(variants, locations) {
+  if (variants.length === 0) return '<p class="text-sm text-muted" style="padding:16px 0">Sin resultados</p>';
+
+  return `
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+      <table class="variants-table">
+        <thead>
+          <tr>
+            <th>Color</th>
+            <th>Talla</th>
+            ${locations.map(l => `<th style="text-align:center">${l.name}</th>`).join('')}
+            <th style="text-align:center">Total</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${variants.map(v => {
+            const badgeClass = v.total === 0 ? 'badge-low' : v.total <= 3 ? 'badge-low' : 'badge-stock';
+            return `
+              <tr class="variant-row-table" data-variant-id="${v.id}">
+                <td><strong>${v.color}</strong></td>
+                <td>${v.size}</td>
+                ${locations.map(l => {
+                  const qty = v.stockByLoc[l.name] || 0;
+                  return `<td style="text-align:center"><span class="${qty === 0 ? 'text-muted' : ''}">${qty}</span></td>`;
+                }).join('')}
+                <td style="text-align:center"><span class="badge ${badgeClass}" style="font-size:0.68rem">${v.total}</span></td>
+                <td>
+                  <div style="display:flex;gap:4px;justify-content:flex-end">
+                    <button class="btn-icon action-add-stock" data-variant-id="${v.id}" title="+ Stock">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                    <button class="btn-icon action-transfer" data-variant-id="${v.id}" title="Trasladar">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+                    </button>
+                    <button class="btn-icon btn-icon-primary action-sell" data-variant-id="${v.id}" title="Vender">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function bindVariantActions(body, locations, product, variants, container, sb) {
   body.querySelectorAll('.action-add-stock').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       openAddStockForm(btn.dataset.variantId, locations, product, variants, container, sb);
     });
   });
-
   body.querySelectorAll('.action-transfer').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       openTransferForm(btn.dataset.variantId, locations, product, variants, container, sb);
     });
   });
-
   body.querySelectorAll('.action-sell').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
