@@ -320,7 +320,10 @@ async function openProductDetail(product, container, sb) {
         <div class="text-sm text-success">Margen: $${margin} (${marginPct}%)</div>
         ${product.product_url ? `<a href="${product.product_url}" target="_blank" class="text-sm text-accent mt-8" style="display:inline-block">Ver en tienda ↗</a>` : ''}
       </div>
-      <button class="btn btn-sm btn-outline" id="edit-product-btn">Editar</button>
+      <div class="flex gap-8">
+        <button class="btn btn-sm btn-outline" id="edit-product-btn">Editar</button>
+        <button class="btn btn-sm btn-outline text-danger" id="delete-product-btn">Eliminar</button>
+      </div>
     </div>
 
     <div class="section-divider mb-8"><span class="section-label">Stock por variante</span></div>
@@ -382,6 +385,16 @@ async function openProductDetail(product, container, sb) {
   document.getElementById('edit-product-btn').addEventListener('click', () => {
     UI.closeSheet();
     openProductForm(product, container, sb);
+  });
+
+  // Delete
+  document.getElementById('delete-product-btn').addEventListener('click', async () => {
+    const ok = await UI.confirm(`¿Eliminar "${product.name}"? Se eliminarán todas sus variantes y stock.`);
+    if (!ok) return;
+    await sb.from('products').update({ active: false }).eq('id', product.id);
+    UI.closeSheet();
+    UI.toast('Producto eliminado');
+    await renderProductList(container, sb);
   });
 
   // Acciones por variante
