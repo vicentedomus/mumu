@@ -33,12 +33,15 @@
 - [x] Flujo de estados: Pedido → En tránsito → Recibido (+ Cancelado)
 - [x] Al recibir pedido → ingreso automático al stock de Casa
 
-## Fase 4 — Reportes
-- [ ] Dashboard con métricas reales (ventas mes, margen, stock bajo)
-- [ ] Reporte de ventas por período (día/semana/mes)
-- [ ] Reporte por producto (más/menos vendido)
-- [ ] Reporte por ubicación (qué hay en consignación, comisiones)
-- [ ] Márgenes por producto y por canal
+## Fase 4 — Reportes [COMPLETADA]
+- [x] Rentabilidad general: ventas, costos, ganancia neta, ROI
+- [x] Comparación vs período anterior (semana/mes/trimestre) con % de cambio
+- [x] Gráfica de barras: ventas por semana
+- [x] Top productos más vendidos con margen real ($) y %
+- [x] Ventas por ubicación con neto por punto de venta
+- [x] Reporte consignación: unidades en tienda, vendidas, comisión, monto que deben
+- [x] Inversión en compras: pedidos, envíos, impuestos, total, ROI
+- [x] Selector de período: semana / mes / trimestre
 
 ## Fase 5 — Venta online (futura)
 - [ ] Investigar Tiendanube (gratis, ideal Latam) o Shopify Starter ($5/mes)
