@@ -15,7 +15,7 @@ async function renderProductList(container, sb) {
   const { data: products, error } = await sb
     .from('products')
     .select(`
-      id, code, name, cost, sale_price, image_url,
+      id, code, name, cost, sale_price, product_url,
       product_variants (
         id, size, color, sku,
         inventory ( quantity, location_id, locations ( name ) )
@@ -141,8 +141,8 @@ function openProductForm(product, container, sb) {
         </div>
       </div>
       <div class="form-group">
-        <label for="pf-image">URL imagen (opcional)</label>
-        <input type="url" id="pf-image" value="${isEdit ? (product.image_url || '') : ''}" placeholder="https://...">
+        <label for="pf-image">URL del producto (Temu, etc.)</label>
+        <input type="url" id="pf-image" value="${isEdit ? (product.product_url || '') : ''}" placeholder="https://...">
       </div>
 
       <div class="section-divider mt-16 mb-16">
@@ -241,7 +241,7 @@ function openProductForm(product, container, sb) {
     const name = document.getElementById('pf-name').value.trim();
     const cost = parseFloat(document.getElementById('pf-cost').value) || 0;
     const sale_price = parseFloat(document.getElementById('pf-price').value) || 0;
-    const image_url = document.getElementById('pf-image').value.trim() || null;
+    const product_url = document.getElementById('pf-image').value.trim() || null;
 
     const sizes = getSelectedSizes();
     const colors = getSelectedColors();
@@ -250,7 +250,7 @@ function openProductForm(product, container, sb) {
 
     if (isEdit) {
       // Actualizar datos del producto
-      const { error } = await sb.from('products').update({ name, cost, sale_price, image_url }).eq('id', product.id);
+      const { error } = await sb.from('products').update({ name, cost, sale_price, product_url }).eq('id', product.id);
       if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
 
       // Crear variantes nuevas (las que no existían)
@@ -264,7 +264,7 @@ function openProductForm(product, container, sb) {
       }
     } else {
       // Crear producto
-      const { data: newProd, error } = await sb.from('products').insert({ name, cost, sale_price, image_url, code: '' }).select().single();
+      const { data: newProd, error } = await sb.from('products').insert({ name, cost, sale_price, product_url, code: '' }).select().single();
       if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
 
       // Crear todas las variantes (producto cartesiano)
@@ -318,6 +318,7 @@ async function openProductDetail(product, container, sb) {
         <div class="text-sm text-muted">${product.code}</div>
         <div class="text-sm mt-8">Costo: <strong>$${product.cost}</strong> · Venta: <strong>$${product.sale_price}</strong></div>
         <div class="text-sm text-success">Margen: $${margin} (${marginPct}%)</div>
+        ${product.product_url ? `<a href="${product.product_url}" target="_blank" class="text-sm text-accent mt-8" style="display:inline-block">Ver en tienda ↗</a>` : ''}
       </div>
       <button class="btn btn-sm btn-outline" id="edit-product-btn">Editar</button>
     </div>
