@@ -10,6 +10,10 @@ const Auth = {
   },
 
   showLogin() {
+    // Ocultar nav y header en el login
+    document.getElementById('bottom-nav').classList.add('hidden');
+    document.querySelector('.page-header').classList.add('hidden');
+
     const app = document.getElementById('app');
     app.innerHTML = `
       <div class="login-container">
