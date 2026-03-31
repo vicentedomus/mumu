@@ -310,11 +310,11 @@ async function openNewOrderForm(container, sb) {
           <button type="button" class="remove-variant oi-remove" data-idx="${idx}" style="margin-bottom:0">&times;</button>
         </div>
         <div class="oi-links-container" data-idx="${idx}" style="margin-top:8px">
-          <div class="form-row" style="gap:6px;margin-bottom:0">
-            <div class="form-group" style="flex:1;margin-bottom:0">
-              <input type="url" class="oi-source-url" data-idx="${idx}" placeholder="Link del producto (Temu, Shein...)">
-            </div>
-            <button type="button" class="btn-icon oi-add-link" data-idx="${idx}" title="Agregar otro link" style="margin-bottom:0;flex-shrink:0">
+          <div class="form-group" style="margin-bottom:0">
+            <input type="url" class="oi-source-url" data-idx="${idx}" placeholder="Link del producto (Temu, Shein...)">
+          </div>
+          <div class="form-row mt-8" style="gap:6px;margin-bottom:0;justify-content:flex-end">
+            <button type="button" class="btn-icon oi-add-link" data-idx="${idx}" title="Agregar otro link" style="flex-shrink:0">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
           </div>
@@ -414,8 +414,9 @@ async function openNewOrderForm(container, sb) {
     if (e.target.closest('.oi-add-link')) {
       const btn = e.target.closest('.oi-add-link');
       const container = btn.closest('.oi-links-container');
-      container.insertAdjacentHTML('beforeend', `
-        <div class="form-row mt-8" style="gap:6px;margin-bottom:0">
+      // Insertar antes del botón "+"
+      btn.closest('.form-row').insertAdjacentHTML('beforebegin', `
+        <div class="form-row mt-8 oi-extra-link" style="gap:6px;margin-bottom:0">
           <div class="form-group" style="flex:1;margin-bottom:0">
             <input type="url" class="oi-source-url" placeholder="Otro link...">
           </div>
@@ -424,19 +425,10 @@ async function openNewOrderForm(container, sb) {
           </button>
         </div>
       `);
-      // Ocultar botón "+" del primer link (solo uno por fila)
-      btn.style.display = 'none';
     }
     // Quitar link extra
     if (e.target.closest('.oi-remove-link')) {
-      const linkRow = e.target.closest('.form-row');
-      const container = linkRow.closest('.oi-links-container');
-      linkRow.remove();
-      // Mostrar botón "+" de nuevo si solo queda un link
-      if (container.querySelectorAll('.oi-source-url').length <= 1) {
-        const addBtn = container.querySelector('.oi-add-link');
-        if (addBtn) addBtn.style.display = '';
-      }
+      e.target.closest('.oi-extra-link').remove();
     }
   });
 
