@@ -10,7 +10,6 @@ const Auth = {
   },
 
   showLogin() {
-    // Ocultar nav y header en el login
     document.getElementById('bottom-nav').classList.add('hidden');
     document.querySelector('.page-header').classList.add('hidden');
     document.body.style.paddingBottom = '0';
@@ -20,18 +19,20 @@ const Auth = {
       <div class="login-container">
         <div class="login-card">
           <img src="/assets/logo.svg" alt="Mumú Babywear" class="login-logo">
-          <form id="login-form">
-            <div class="form-group">
-              <label for="email">Email</label>
-              <input type="email" id="email" required autocomplete="email" placeholder="tu@email.com">
-            </div>
-            <div class="form-group">
-              <label for="password">Contraseña</label>
-              <input type="password" id="password" required autocomplete="current-password" placeholder="Tu contraseña">
-            </div>
-            <button type="submit" class="btn btn-primary btn-full">Entrar</button>
-            <p id="login-error" class="error-text" hidden></p>
-          </form>
+          <div class="login-form-card">
+            <form id="login-form">
+              <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" required autocomplete="email" placeholder="tu@email.com">
+              </div>
+              <div class="form-group">
+                <label for="password">Contraseña</label>
+                <input type="password" id="password" required autocomplete="current-password" placeholder="Tu contraseña">
+              </div>
+              <button type="submit" class="btn btn-primary btn-full">Entrar</button>
+              <p id="login-error" class="error-text" hidden></p>
+            </form>
+          </div>
         </div>
       </div>
     `;

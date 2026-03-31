@@ -8,7 +8,6 @@ Router.register('#/dashboard', async (container) => {
     return;
   }
 
-  // Obtener datos
   const [
     { count: totalProducts },
     { data: inventory },
@@ -30,7 +29,6 @@ Router.register('#/dashboard', async (container) => {
   const monthlyRevenue = monthlySales.reduce((sum, s) => sum + (s.unit_price * s.quantity), 0);
   const monthlyCommissions = monthlySales.reduce((sum, s) => sum + (s.commission_amount || 0), 0);
 
-  // Greeting based on time
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Buenos dias' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
   const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -38,8 +36,11 @@ Router.register('#/dashboard', async (container) => {
 
   container.innerHTML = `
     <div class="welcome-section">
-      <h2>${greeting} &#10024;</h2>
-      <p>Resumen de ${monthNames[now.getMonth()]} ${now.getFullYear()}</p>
+      <div>
+        <h2>${greeting}</h2>
+        <p>Resumen de ${monthNames[now.getMonth()]} ${now.getFullYear()}</p>
+      </div>
+      <img src="/assets/mumu-face.svg" alt="" class="welcome-mascot">
     </div>
 
     <div class="stats-grid">
@@ -66,7 +67,7 @@ Router.register('#/dashboard', async (container) => {
       </div>
       <div class="stat-card">
         <div class="stat-icon stat-icon-blush">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/><line x1="3" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="21" y2="12"/></svg>
         </div>
         <div class="stat-value">$${monthlyCommissions.toLocaleString()}</div>
         <div class="stat-label">Comisiones</div>
@@ -74,9 +75,12 @@ Router.register('#/dashboard', async (container) => {
     </div>
 
     ${lowStockData && lowStockData.length > 0 ? `
-      <div class="card" style="cursor:default;border-left:3px solid var(--color-danger)">
-        <div class="card-title">Stock bajo</div>
-        ${lowStockData.slice(0, 5).map(item => `
+      <div class="card card-alert">
+        <div class="card-title" style="display:flex;align-items:center;gap:8px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Stock bajo
+        </div>
+        ${lowStockData.slice(0, 4).map(item => `
           <div class="list-item">
             <div class="list-item-content">
               <div class="list-item-title">${item.product_variants?.products?.name || 'Producto'}</div>
