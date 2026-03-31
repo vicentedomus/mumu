@@ -17,7 +17,7 @@ async function renderOrdersList(container, sb) {
     .from('purchase_orders')
     .select(`
       id, supplier, status, total, shipping_cost, taxes, estimated_arrival, notes, created_at,
-      purchase_order_items ( id, quantity, unit_cost, product_variants ( color, size, products ( name ) ) )
+      purchase_order_items ( id, quantity, unit_cost, source_url, product_variants ( color, size, products ( name ) ) )
     `)
     .order('created_at', { ascending: false })
     .limit(30);
@@ -120,6 +120,7 @@ async function openOrderDetail(order, container, sb) {
         <div class="list-item-content">
           <div class="list-item-title">${i.product_variants?.products?.name || 'Producto'}</div>
           <div class="list-item-sub">${i.product_variants?.color || ''} · ${i.product_variants?.size || ''}</div>
+          ${i.source_url ? `<a href="${i.source_url}" target="_blank" class="text-sm text-accent" style="display:inline-block;margin-top:2px">Ver en tienda ↗</a>` : ''}
         </div>
         <div class="list-item-right">
           <strong>x${i.quantity}</strong>
@@ -254,6 +255,8 @@ async function openNewOrderForm(container, sb) {
   UI.openSheet('Nuevo pedido', html);
   let itemIndex = 0;
 
+  let productsList = products || [];
+
   const addItemRow = () => {
     const idx = itemIndex++;
     document.getElementById('order-items-container').insertAdjacentHTML('beforeend', `
@@ -261,7 +264,8 @@ async function openNewOrderForm(container, sb) {
         <div class="form-group" style="margin-bottom:10px">
           <select class="oi-product" data-idx="${idx}">
             <option value="">Seleccionar producto...</option>
-            ${(products || []).map(p => `<option value="${p.id}" data-cost="${p.cost}">${p.name} ($${p.cost} c/u)</option>`).join('')}
+            ${productsList.map(p => `<option value="${p.id}" data-cost="${p.cost}">${p.name} ($${p.cost} c/u)</option>`).join('')}
+            <option value="__new__">＋ Crear producto nuevo...</option>
           </select>
         </div>
         <div class="form-row" style="margin-bottom:10px">
@@ -288,6 +292,9 @@ async function openNewOrderForm(container, sb) {
           </div>
           <button type="button" class="remove-variant oi-remove" data-idx="${idx}" style="margin-bottom:0">&times;</button>
         </div>
+        <div class="form-group" style="margin-top:8px;margin-bottom:0">
+          <input type="url" class="oi-source-url" data-idx="${idx}" placeholder="Link del producto (Temu, Shein, etc.)">
+        </div>
       </div>
     `);
   };
@@ -304,7 +311,7 @@ async function openNewOrderForm(container, sb) {
     const color = document.querySelector(`.oi-color[data-idx="${idx}"]`)?.value;
     const hiddenInput = document.querySelector(`.oi-variant[data-idx="${idx}"]`);
     if (!productId || !size || !color) { hiddenInput.value = ''; return; }
-    const product = products.find(p => p.id === productId);
+    const product = productsList.find(p => p.id === productId);
     const variant = (product?.product_variants || []).find(v => v.size === size && v.color === color);
     hiddenInput.value = variant ? variant.id : '';
   }
@@ -318,6 +325,25 @@ async function openNewOrderForm(container, sb) {
       const colorSelect = document.querySelector(`.oi-color[data-idx="${idx}"]`);
       const costInput = document.querySelector(`.oi-cost[data-idx="${idx}"]`);
 
+      // Crear producto nuevo inline
+      if (productId === '__new__') {
+        e.target.value = ''; // reset select
+        UI.closeSheet();
+        openProductFormForOrder(container, sb, async (newProduct) => {
+          // Recargar productos y reabrir formulario de pedido
+          const { data: refreshed } = await sb
+            .from('products')
+            .select('id, name, cost, product_variants(id, size, color)')
+            .eq('active', true)
+            .order('name');
+          productsList = refreshed || [];
+          // Re-abrir el formulario de pedido con el producto nuevo pre-seleccionado
+          UI.toast('Producto creado — agrégalo al pedido');
+          openNewOrderForm(container, sb);
+        });
+        return;
+      }
+
       if (!productId) {
         sizeSelect.innerHTML = '<option value="">—</option>';
         sizeSelect.disabled = true;
@@ -326,7 +352,7 @@ async function openNewOrderForm(container, sb) {
         return;
       }
 
-      const product = products.find(p => p.id === productId);
+      const product = productsList.find(p => p.id === productId);
       costInput.value = product.cost;
 
       const sizes = [...new Set((product.product_variants || []).map(v => v.size))];
@@ -404,8 +430,9 @@ async function openNewOrderForm(container, sb) {
       const variantId = row.querySelector('.oi-variant')?.value;
       const qty = parseInt(row.querySelector('.oi-qty')?.value) || 0;
       const cost = parseFloat(row.querySelector('.oi-cost')?.value) || 0;
+      const source_url = row.querySelector('.oi-source-url')?.value.trim() || null;
       if (variantId && qty > 0) {
-        items.push({ variant_id: variantId, quantity: qty, unit_cost: cost });
+        items.push({ variant_id: variantId, quantity: qty, unit_cost: cost, source_url });
         productTotal += qty * cost;
       }
     });
@@ -424,12 +451,114 @@ async function openNewOrderForm(container, sb) {
     // Crear ítems
     for (const item of items) {
       await sb.from('purchase_order_items').insert({
-        order_id: newOrder.id, variant_id: item.variant_id, quantity: item.quantity, unit_cost: item.unit_cost
+        order_id: newOrder.id, variant_id: item.variant_id, quantity: item.quantity, unit_cost: item.unit_cost, source_url: item.source_url
       });
     }
 
     UI.closeSheet();
     UI.toast('Pedido creado');
     await renderOrdersList(container, sb);
+  });
+}
+
+// ============================================
+// Crear producto nuevo desde pedidos (formulario rápido)
+// ============================================
+async function openProductFormForOrder(container, sb, onCreated) {
+  const ALL_SIZES = ['única', 'N/A', '0-3', '3-6', '6-9', '9-12', '12-18', '18-24'];
+
+  const html = `
+    <form id="quick-product-form">
+      <div class="form-group">
+        <label>Nombre del producto *</label>
+        <input type="text" id="qp-name" required placeholder="Ej: Overol de punto">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Costo ($)</label>
+          <input type="number" id="qp-cost" step="0.01" min="0" placeholder="0.00">
+        </div>
+        <div class="form-group">
+          <label>Precio venta ($)</label>
+          <input type="number" id="qp-price" step="0.01" min="0" placeholder="0.00">
+        </div>
+      </div>
+
+      <div class="section-divider mt-16 mb-16"><span class="section-label">Tallas</span></div>
+      <div class="chip-selector" id="qp-sizes">
+        ${ALL_SIZES.map(s => `<button type="button" class="chip" data-value="${s}">${s}</button>`).join('')}
+      </div>
+
+      <div class="section-divider mt-16 mb-16"><span class="section-label">Colores</span></div>
+      <div class="chip-list" id="qp-colors"></div>
+      <div class="form-row mt-8">
+        <div class="form-group" style="flex:1;margin-bottom:0">
+          <input type="text" id="qp-color-input" placeholder="Agregar color (ej: rosa)">
+        </div>
+        <button type="button" class="btn btn-sm btn-outline" id="qp-add-color">+</button>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-full mt-16">Crear producto</button>
+      <button type="button" class="btn btn-outline btn-full mt-8" id="qp-cancel">Cancelar</button>
+    </form>
+  `;
+
+  UI.openSheet('Nuevo producto', html);
+
+  // Tallas toggle
+  document.getElementById('qp-sizes').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (chip) chip.classList.toggle('chip-active');
+  });
+
+  // Colores
+  const addColor = () => {
+    const input = document.getElementById('qp-color-input');
+    const color = input.value.trim().toLowerCase();
+    if (!color) return;
+    const existing = document.querySelectorAll('#qp-colors .chip');
+    for (const c of existing) { if (c.dataset.value === color) return; }
+    document.getElementById('qp-colors').insertAdjacentHTML('beforeend',
+      `<span class="chip chip-active chip-removable" data-value="${color}">${color} <span class="chip-x">&times;</span></span>`
+    );
+    input.value = '';
+  };
+  document.getElementById('qp-add-color').addEventListener('click', addColor);
+  document.getElementById('qp-color-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addColor(); }
+  });
+  document.getElementById('qp-colors').addEventListener('click', (e) => {
+    if (e.target.classList.contains('chip-x')) e.target.closest('.chip').remove();
+  });
+
+  // Cancelar
+  document.getElementById('qp-cancel').addEventListener('click', () => {
+    UI.closeSheet();
+    openNewOrderForm(container, sb);
+  });
+
+  // Submit
+  document.getElementById('quick-product-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('qp-name').value.trim();
+    const cost = parseFloat(document.getElementById('qp-cost').value) || 0;
+    const sale_price = parseFloat(document.getElementById('qp-price').value) || 0;
+
+    const sizes = [...document.querySelectorAll('#qp-sizes .chip-active')].map(c => c.dataset.value);
+    const colors = [...document.querySelectorAll('#qp-colors .chip')].map(c => c.dataset.value);
+    const s = sizes.length > 0 ? sizes : ['única'];
+    const c = colors.length > 0 ? colors : ['único'];
+
+    const { data: newProd, error } = await sb.from('products').insert({ name, cost, sale_price, code: '' }).select().single();
+    if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
+
+    for (const size of s) {
+      for (const color of c) {
+        await sb.from('product_variants').insert({ product_id: newProd.id, size, color, sku: '' });
+      }
+    }
+
+    UI.closeSheet();
+    if (onCreated) onCreated(newProd);
   });
 }

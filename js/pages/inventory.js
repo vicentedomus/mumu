@@ -15,7 +15,7 @@ async function renderProductList(container, sb) {
   const { data: products, error } = await sb
     .from('products')
     .select(`
-      id, code, name, cost, sale_price, product_url,
+      id, code, name, cost, sale_price, product_url, image_url,
       product_variants (
         id, size, color, sku,
         inventory ( quantity, location_id, locations ( name ) )
@@ -88,11 +88,14 @@ function renderProductCard(p) {
   return `
     <div class="card product-card" data-id="${p.id}" data-name="${p.name.toLowerCase()}">
       <div class="flex-between">
-        <div>
-          <div class="list-item-title">${p.name}</div>
-          <div class="list-item-sub">${p.code} · ${variants} variante${variants !== 1 ? 's' : ''}</div>
-          <div class="mt-8">
-            ${colors.map(c => `<span class="color-tag">${c}</span>`).join('')}
+        <div style="display:flex;gap:12px;align-items:flex-start;flex:1;min-width:0">
+          ${p.image_url ? `<img src="${p.image_url}" alt="" class="product-thumb">` : ''}
+          <div style="min-width:0">
+            <div class="list-item-title">${p.name}</div>
+            <div class="list-item-sub">${p.code} · ${variants} variante${variants !== 1 ? 's' : ''}</div>
+            <div class="mt-8">
+              ${colors.map(c => `<span class="color-tag">${c}</span>`).join('')}
+            </div>
           </div>
         </div>
         <div class="text-right">
@@ -133,11 +136,14 @@ function addFAB(onClick) {
 // ============================================
 // Formulario crear/editar producto
 // ============================================
-const ALL_SIZES = ['única', '0-3', '3-6', '6-9', '9-12', '12-18', '18-24'];
+const ALL_SIZES = ['única', 'N/A', '0-3', '3-6', '6-9', '9-12', '12-18', '18-24'];
 
-function openProductForm(product, container, sb) {
+async function openProductForm(product, container, sb) {
   const isEdit = !!product;
   const title = isEdit ? 'Editar producto' : 'Nuevo producto';
+
+  // Cargar ubicaciones para stock inicial
+  const { data: locations } = await sb.from('locations').select('id, name').eq('active', true);
 
   // Extraer tallas y colores existentes
   const existingSizes = isEdit ? [...new Set((product.product_variants || []).map(v => v.size))] : [];
@@ -160,8 +166,18 @@ function openProductForm(product, container, sb) {
         </div>
       </div>
       <div class="form-group">
-        <label for="pf-image">URL del producto (Temu, etc.)</label>
-        <input type="url" id="pf-image" value="${isEdit ? (product.product_url || '') : ''}" placeholder="https://...">
+        <label>Foto del producto</label>
+        <div class="photo-upload-area" id="pf-photo-area">
+          ${isEdit && product.image_url
+            ? `<img src="${product.image_url}" alt="" class="photo-preview" id="pf-photo-preview">`
+            : `<div class="photo-placeholder" id="pf-photo-placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                <span>Toca para agregar foto</span>
+              </div>`}
+          ${isEdit && product.image_url ? '<button type="button" class="photo-remove" id="pf-photo-remove">&times;</button>' : ''}
+        </div>
+        <input type="file" id="pf-photo-input" accept="image/jpeg,image/png,image/webp" style="display:none">
+        <input type="hidden" id="pf-image" value="${isEdit ? (product.image_url || '') : ''}">
       </div>
 
       <div class="section-divider mt-16 mb-16">
@@ -184,6 +200,15 @@ function openProductForm(product, container, sb) {
         <button type="button" class="btn btn-sm btn-outline" id="add-color-btn">+</button>
       </div>
 
+      ${!isEdit ? `
+      <div class="form-group mt-16">
+        <label>Ubicación del stock inicial</label>
+        <select id="pf-stock-location">
+          ${(locations || []).map(l => `<option value="${l.id}">${l.name}</option>`).join('')}
+        </select>
+      </div>
+      ` : ''}
+
       <div class="section-divider mt-16 mb-8">
         <span class="section-label">${isEdit ? 'Preview de variantes' : 'Stock inicial (opcional)'}</span>
       </div>
@@ -195,6 +220,57 @@ function openProductForm(product, container, sb) {
   `;
 
   const body = UI.openSheet(title, html);
+
+  // --- Foto: subir archivo ---
+  const photoArea = document.getElementById('pf-photo-area');
+  const photoInput = document.getElementById('pf-photo-input');
+  const hiddenImageUrl = document.getElementById('pf-image');
+
+  photoArea.addEventListener('click', (e) => {
+    if (e.target.closest('.photo-remove')) return;
+    photoInput.click();
+  });
+
+  photoInput.addEventListener('change', () => {
+    const file = photoInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      photoArea.innerHTML = `
+        <img src="${ev.target.result}" alt="" class="photo-preview" id="pf-photo-preview">
+        <button type="button" class="photo-remove" id="pf-photo-remove">&times;</button>
+      `;
+      // Re-bind remove
+      document.getElementById('pf-photo-remove').addEventListener('click', (e) => {
+        e.stopPropagation();
+        photoInput.value = '';
+        hiddenImageUrl.value = '';
+        photoArea.innerHTML = `
+          <div class="photo-placeholder" id="pf-photo-placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            <span>Toca para agregar foto</span>
+          </div>
+        `;
+      });
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // Remove existing photo
+  const removeBtn = document.getElementById('pf-photo-remove');
+  if (removeBtn) {
+    removeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      photoInput.value = '';
+      hiddenImageUrl.value = '';
+      photoArea.innerHTML = `
+        <div class="photo-placeholder" id="pf-photo-placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          <span>Toca para agregar foto</span>
+        </div>
+      `;
+    });
+  }
 
   // --- Tallas: toggle chips ---
   document.getElementById('size-selector').addEventListener('click', (e) => {
@@ -301,7 +377,22 @@ function openProductForm(product, container, sb) {
     const name = document.getElementById('pf-name').value.trim();
     const cost = parseFloat(document.getElementById('pf-cost').value) || 0;
     const sale_price = parseFloat(document.getElementById('pf-price').value) || 0;
-    const product_url = document.getElementById('pf-image').value.trim() || null;
+    // Subir foto si hay archivo nuevo
+    let image_url = document.getElementById('pf-image').value.trim() || null;
+    const photoFile = document.getElementById('pf-photo-input').files[0];
+    if (photoFile) {
+      const ext = photoFile.name.split('.').pop().toLowerCase();
+      const fileName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { data: uploadData, error: uploadError } = await sb.storage
+        .from('product-images')
+        .upload(fileName, photoFile, { contentType: photoFile.type });
+      if (uploadError) {
+        UI.toast('Error subiendo foto: ' + uploadError.message, 'error');
+        return;
+      }
+      const { data: urlData } = sb.storage.from('product-images').getPublicUrl(fileName);
+      image_url = urlData.publicUrl;
+    }
 
     const sizes = getSelectedSizes();
     const colors = getSelectedColors();
@@ -387,7 +478,7 @@ function openProductForm(product, container, sb) {
       }
 
       // Actualizar datos del producto
-      const { error } = await sb.from('products').update({ name, cost, sale_price, product_url }).eq('id', product.id);
+      const { error } = await sb.from('products').update({ name, cost, sale_price, image_url }).eq('id', product.id);
       if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
 
       // Crear variantes nuevas (las que no existían)
@@ -413,25 +504,25 @@ function openProductForm(product, container, sb) {
       }
     } else {
       // Crear producto
-      const { data: newProd, error } = await sb.from('products').insert({ name, cost, sale_price, product_url, code: '' }).select().single();
+      const { data: newProd, error } = await sb.from('products').insert({ name, cost, sale_price, image_url, code: '' }).select().single();
       if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
 
-      // Obtener ubicación Casa para stock inicial
-      const { data: casaLoc } = await sb.from('locations').select('id').eq('name', 'Casa').single();
+      // Ubicación seleccionada para stock inicial
+      const stockLocationId = document.getElementById('pf-stock-location')?.value;
 
       // Crear todas las variantes (producto cartesiano) + stock inicial
       for (const size of s) {
         for (const color of c) {
           const { data: variant } = await sb.from('product_variants').insert({ product_id: newProd.id, size, color, sku: '' }).select().single();
 
-          // Stock inicial
-          if (variant && casaLoc) {
+          // Stock inicial en la ubicación seleccionada
+          if (variant && stockLocationId) {
             const input = document.querySelector(`.stock-initial-input[data-size="${size}"][data-color="${color}"]`);
             const qty = parseInt(input?.value) || 0;
             if (qty > 0) {
-              await sb.from('inventory').insert({ variant_id: variant.id, location_id: casaLoc.id, quantity: qty });
+              await sb.from('inventory').insert({ variant_id: variant.id, location_id: stockLocationId, quantity: qty });
               await sb.from('inventory_movements').insert({
-                variant_id: variant.id, to_location_id: casaLoc.id, quantity: qty,
+                variant_id: variant.id, to_location_id: stockLocationId, quantity: qty,
                 type: 'ingreso', notes: 'Stock inicial'
               });
             }
@@ -487,13 +578,11 @@ async function openProductDetail(product, container, sb) {
   const totalStock = variantData.reduce((s, v) => s + v.total, 0);
 
   const html = `
-    <div class="flex-between mb-16">
-      <div>
-        <div class="text-sm text-muted">${product.code} · ${variantData.length} variantes · ${totalStock} uds total</div>
-        <div class="text-sm mt-8">Costo: <strong>$${product.cost}</strong> · Venta: <strong>$${product.sale_price}</strong> · <span class="text-success">Margen: $${margin} (${marginPct}%)</span></div>
-        ${product.product_url ? `<a href="${product.product_url}" target="_blank" class="text-sm text-accent mt-8" style="display:inline-block">Ver en tienda ↗</a>` : ''}
-      </div>
-      <div class="flex gap-8">
+    ${product.image_url ? `<div style="text-align:center;margin-bottom:16px"><img src="${product.image_url}" alt="" class="product-detail-img"></div>` : ''}
+    <div class="mb-16">
+      <div class="text-sm text-muted">${product.code} · ${variantData.length} variantes · ${totalStock} uds total</div>
+      <div class="text-sm mt-8">Costo: <strong>$${product.cost}</strong> · Venta: <strong>$${product.sale_price}</strong> · <span class="text-success">Margen: $${margin} (${marginPct}%)</span></div>
+      <div class="flex gap-8 mt-8">
         <button class="btn btn-sm btn-outline" id="edit-product-btn">Editar</button>
         <button class="btn btn-sm btn-outline text-danger" id="delete-product-btn">Eliminar</button>
       </div>
@@ -568,7 +657,7 @@ async function openProductDetail(product, container, sb) {
 }
 
 function sortVariants(variants, sortBy) {
-  const sizeOrder = ['única', '0-3', '3-6', '6-9', '9-12', '12-18', '18-24'];
+  const sizeOrder = ['única', 'N/A', '0-3', '3-6', '6-9', '9-12', '12-18', '18-24'];
   return [...variants].sort((a, b) => {
     if (sortBy === 'color') return a.color.localeCompare(b.color) || sizeOrder.indexOf(a.size) - sizeOrder.indexOf(b.size);
     if (sortBy === 'size') return sizeOrder.indexOf(a.size) - sizeOrder.indexOf(b.size) || a.color.localeCompare(b.color);
