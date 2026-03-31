@@ -16,7 +16,8 @@ async function renderOrdersList(container, sb) {
   const { data: orders, error } = await sb
     .from('purchase_orders')
     .select(`
-      id, supplier, status, total, shipping_cost, taxes, estimated_arrival, notes, created_at,
+      id, supplier, status, total, shipping_cost, taxes, estimated_arrival, notes, created_at, destination_location_id,
+      destination_location:locations!destination_location_id ( name ),
       purchase_order_items ( id, quantity, unit_cost, source_url, product_variants ( color, size, products ( name ) ) )
     `)
     .order('created_at', { ascending: false })
@@ -49,8 +50,8 @@ async function renderOrdersList(container, sb) {
       <div class="card order-card" data-id="${o.id}">
         <div class="flex-between mb-8">
           <div>
-            <div class="list-item-title">${o.supplier}</div>
-            <div class="list-item-sub">${new Date(o.created_at).toLocaleDateString('es-CL')}${o.estimated_arrival ? ' · Llega: ' + new Date(o.estimated_arrival).toLocaleDateString('es-CL') : ''}</div>
+            <div class="list-item-title">${o.supplier || itemNames.join(', ') || 'Pedido'}</div>
+            <div class="list-item-sub">${new Date(o.created_at).toLocaleDateString('es-CL')}${o.estimated_arrival ? ' · Llega: ' + new Date(o.estimated_arrival).toLocaleDateString('es-CL') : ''}${o.destination_location?.name ? ' · → ' + o.destination_location.name : ''}</div>
           </div>
           <span class="badge ${statusClasses[o.status] || ''}">${statusLabels[o.status] || o.status}</span>
         </div>
@@ -92,15 +93,15 @@ async function openOrderDetail(order, container, sb) {
   } else if (order.status === 'in_transit') {
     actionsHTML = `
       <button class="btn btn-primary btn-full mb-8" id="od-received">Marcar como recibido</button>
-      <p class="text-sm text-muted mt-8" style="text-align:center">Al recibir se agregará el stock automáticamente</p>
+      <p class="text-sm text-muted mt-8" style="text-align:center">Al recibir se agregará el stock a ${order.destination_location?.name || 'Casa'}</p>
     `;
   }
 
   const html = `
     <div class="flex-between mb-16">
       <div>
-        <div class="text-sm text-muted">Proveedor</div>
-        <div class="list-item-title">${order.supplier}</div>
+        ${order.supplier ? `<div class="text-sm text-muted">Proveedor</div><div class="list-item-title">${order.supplier}</div>` : ''}
+        ${order.destination_location?.name ? `<div class="text-sm text-muted mt-8">Destino</div><div class="text-sm"><strong>${order.destination_location.name}</strong></div>` : ''}
       </div>
       <span class="badge ${order.status === 'received' ? 'badge-stock' : order.status === 'in_transit' ? 'badge-low' : 'badge-consign'}">${statusLabels[order.status]}</span>
     </div>
@@ -163,34 +164,40 @@ async function openOrderDetail(order, container, sb) {
 
   if (btnReceived) {
     btnReceived.addEventListener('click', async () => {
-      const ok = await UI.confirm('¿Marcar como recibido? Se agregarán las unidades al stock de Casa.');
-      if (!ok) return;
+      // Determinar ubicación destino
+      let destLocId = order.destination_location_id;
+      let destLocName = order.destination_location?.name || 'Casa';
+      if (!destLocId) {
+        // Fallback a Casa si no se guardó destino
+        const { data: casaLoc } = await sb.from('locations').select('id').eq('name', 'Casa').single();
+        if (!casaLoc) { UI.toast('No se encontró ubicación', 'error'); return; }
+        destLocId = casaLoc.id;
+        destLocName = 'Casa';
+      }
 
-      // Obtener ubicación "Casa"
-      const { data: casaLoc } = await sb.from('locations').select('id').eq('name', 'Casa').single();
-      if (!casaLoc) { UI.toast('No se encontró ubicación Casa', 'error'); return; }
+      const ok = await UI.confirm(`¿Marcar como recibido? Se agregarán las unidades al stock de ${destLocName}.`);
+      if (!ok) return;
 
       // Agregar stock por cada ítem
       for (const item of items) {
-        const variantId = item.product_variants ? item.id : null;
         // Necesitamos el variant_id real
         const { data: oiData } = await sb.from('purchase_order_items').select('variant_id').eq('id', item.id).single();
         if (!oiData) continue;
 
-        // Upsert inventario
+        // Upsert inventario en la ubicación destino
         const { data: existing } = await sb.from('inventory')
-          .select('id, quantity').eq('variant_id', oiData.variant_id).eq('location_id', casaLoc.id).single();
+          .select('id, quantity').eq('variant_id', oiData.variant_id).eq('location_id', destLocId).single();
 
         if (existing) {
           await sb.from('inventory').update({ quantity: existing.quantity + item.quantity, updated_at: new Date().toISOString() }).eq('id', existing.id);
         } else {
-          await sb.from('inventory').insert({ variant_id: oiData.variant_id, location_id: casaLoc.id, quantity: item.quantity });
+          await sb.from('inventory').insert({ variant_id: oiData.variant_id, location_id: destLocId, quantity: item.quantity });
         }
 
         // Registrar movimiento
         await sb.from('inventory_movements').insert({
-          variant_id: oiData.variant_id, to_location_id: casaLoc.id, quantity: item.quantity,
-          type: 'ingreso', notes: `Pedido recibido: ${order.supplier}`
+          variant_id: oiData.variant_id, to_location_id: destLocId, quantity: item.quantity,
+          type: 'ingreso', notes: `Pedido recibido${order.supplier ? ': ' + order.supplier : ''} → ${destLocName}`
         });
       }
 
@@ -214,11 +221,21 @@ async function openNewOrderForm(container, sb) {
     .eq('active', true)
     .order('name');
 
+  const { data: locations } = await sb.from('locations').select('id, name').eq('active', true);
+
   const html = `
     <form id="new-order-form">
-      <div class="form-group">
-        <label>Proveedor</label>
-        <input type="text" id="no-supplier" required placeholder="Ej: Temu, Shein, etc.">
+      <div class="form-row">
+        <div class="form-group" style="flex:1">
+          <label>Proveedor (opcional)</label>
+          <input type="text" id="no-supplier" placeholder="Ej: Temu, Shein...">
+        </div>
+        <div class="form-group" style="flex:1">
+          <label>Destino</label>
+          <select id="no-destination">
+            ${(locations || []).map(l => `<option value="${l.id}">${l.name}</option>`).join('')}
+          </select>
+        </div>
       </div>
       <div class="form-row">
         <div class="form-group" style="flex:1">
@@ -417,7 +434,8 @@ async function openNewOrderForm(container, sb) {
   document.getElementById('new-order-form').addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    const supplier = document.getElementById('no-supplier').value.trim();
+    const supplier = document.getElementById('no-supplier').value.trim() || '';
+    const destination_location_id = document.getElementById('no-destination').value;
     const shipping_cost = parseFloat(document.getElementById('no-shipping').value) || 0;
     const taxes = parseFloat(document.getElementById('no-taxes').value) || 0;
     const estimated_arrival = document.getElementById('no-arrival').value || null;
@@ -443,7 +461,7 @@ async function openNewOrderForm(container, sb) {
 
     // Crear pedido
     const { data: newOrder, error } = await sb.from('purchase_orders')
-      .insert({ supplier, shipping_cost, taxes, total, estimated_arrival, notes, status: 'ordered' })
+      .insert({ supplier, destination_location_id, shipping_cost, taxes, total, estimated_arrival, notes, status: 'ordered' })
       .select().single();
 
     if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
