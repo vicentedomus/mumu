@@ -703,52 +703,106 @@ function openAddStockForm(variantId, locations, product, variants, container, sb
   UI.closeSheet();
   const variant = variants.find(v => v.id === variantId);
 
+  // Stock actual por ubicación
+  const stockByLoc = {};
+  (variant?.inventory || []).forEach(inv => {
+    const locName = inv.locations?.name || '?';
+    const loc = locations.find(l => l.name === locName);
+    if (loc) stockByLoc[loc.id] = { name: locName, current: inv.quantity };
+  });
+
   const html = `
     <form id="add-stock-form">
-      <p class="text-sm text-muted mb-16">${product.name} · ${variant?.color} · ${variant?.size}</p>
-      <div class="form-group">
-        <label>Ubicación</label>
-        <select id="as-location" required>
-          ${locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Cantidad</label>
-        <input type="number" id="as-quantity" min="1" value="1" required>
-      </div>
-      <div class="form-group">
-        <label>Nota (opcional)</label>
-        <input type="text" id="as-notes" placeholder="Ej: Llegó pedido Temu">
-      </div>
-      <button type="submit" class="btn btn-primary btn-full">Agregar stock</button>
+      <p class="text-sm text-secondary mb-16"><strong>${variant?.color}</strong> · ${variant?.size}</p>
+      <p class="text-sm text-muted mb-8">Edita el stock por ubicación:</p>
+      ${locations.map(l => {
+        const current = stockByLoc[l.id]?.current || 0;
+        return `
+          <div class="flex-between mb-8" style="gap:8px">
+            <span class="text-sm" style="flex:1"><strong>${l.name}</strong> <span class="text-muted">(actual: ${current})</span></span>
+            <input type="number" class="as-stock-input" data-loc-id="${l.id}" data-loc-name="${l.name}" data-current="${current}"
+              min="0" value="${current}"
+              style="width:70px;padding:8px;text-align:center;font-size:0.85rem;border-radius:var(--r-sm);border:none;background:var(--surface-high);box-shadow:var(--clay-inner)">
+          </div>
+        `;
+      }).join('')}
+      <button type="submit" class="btn btn-primary btn-full mt-16">Guardar</button>
     </form>
   `;
 
-  UI.openSheet('Agregar stock', html);
+  UI.openSheet('Ajustar stock', html);
 
   document.getElementById('add-stock-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const locationId = document.getElementById('as-location').value;
-    const quantity = parseInt(document.getElementById('as-quantity').value);
-    const notes = document.getElementById('as-notes').value.trim() || null;
 
-    // Upsert inventario
-    const { data: existing } = await sb.from('inventory')
-      .select('id, quantity').eq('variant_id', variantId).eq('location_id', locationId).single();
-
-    if (existing) {
-      await sb.from('inventory').update({ quantity: existing.quantity + quantity, updated_at: new Date().toISOString() }).eq('id', existing.id);
-    } else {
-      await sb.from('inventory').insert({ variant_id: variantId, location_id: locationId, quantity });
-    }
-
-    // Registrar movimiento
-    await sb.from('inventory_movements').insert({
-      variant_id: variantId, to_location_id: locationId, quantity, type: 'ingreso', notes
+    // Detectar cambios
+    const changes = [];
+    document.querySelectorAll('.as-stock-input').forEach(input => {
+      const locId = input.dataset.locId;
+      const locName = input.dataset.locName;
+      const current = parseInt(input.dataset.current) || 0;
+      const newQty = parseInt(input.value) || 0;
+      if (newQty !== current) {
+        changes.push({ locId, locName, current, newQty, diff: newQty - current });
+      }
     });
 
+    if (changes.length === 0) { UI.closeSheet(); return; }
+
+    // Pedir nota
     UI.closeSheet();
-    UI.toast(`+${quantity} unidades agregadas`);
+    const note = await new Promise((resolve) => {
+      const noteHtml = `
+        <p class="text-sm text-secondary mb-8"><strong>${variant?.color}</strong> · ${variant?.size}</p>
+        ${changes.map(ch => `
+          <div class="flex-between mb-8">
+            <span class="text-sm"><strong>${ch.locName}</strong></span>
+            <span class="text-sm">${ch.current} → <strong>${ch.newQty}</strong> <span class="${ch.diff > 0 ? 'text-success' : 'text-danger'}">(${ch.diff > 0 ? '+' : ''}${ch.diff})</span></span>
+          </div>
+        `).join('')}
+        <div class="form-group mt-16">
+          <label>Nota del ajuste *</label>
+          <input type="text" id="as-note" required placeholder="Ej: Llegó pedido Temu, conteo físico, etc.">
+        </div>
+        <div class="flex gap-8">
+          <button class="btn btn-outline btn-full" id="as-cancel">Cancelar</button>
+          <button class="btn btn-primary btn-full" id="as-confirm">Confirmar</button>
+        </div>
+      `;
+      UI.openSheet('Confirmar ajuste', noteHtml);
+      document.getElementById('as-cancel').addEventListener('click', () => { UI.closeSheet(); resolve(null); });
+      document.getElementById('as-confirm').addEventListener('click', () => {
+        const val = document.getElementById('as-note').value.trim();
+        if (!val) { UI.toast('Escribe una nota', 'error'); return; }
+        UI.closeSheet();
+        resolve(val);
+      });
+    });
+
+    if (!note) return;
+
+    // Aplicar cambios
+    for (const ch of changes) {
+      const { data: existing } = await sb.from('inventory')
+        .select('id, quantity').eq('variant_id', variantId).eq('location_id', ch.locId).single();
+
+      if (existing) {
+        await sb.from('inventory').update({ quantity: ch.newQty, updated_at: new Date().toISOString() }).eq('id', existing.id);
+      } else if (ch.newQty > 0) {
+        await sb.from('inventory').insert({ variant_id: variantId, location_id: ch.locId, quantity: ch.newQty });
+      }
+
+      await sb.from('inventory_movements').insert({
+        variant_id: variantId,
+        to_location_id: ch.diff > 0 ? ch.locId : null,
+        from_location_id: ch.diff < 0 ? ch.locId : null,
+        quantity: Math.abs(ch.diff),
+        type: 'ajuste',
+        notes: note
+      });
+    }
+
+    UI.toast('Stock actualizado');
     await renderProductList(container, sb);
   });
 }
