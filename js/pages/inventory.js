@@ -322,11 +322,24 @@ function openProductForm(product, container, sb) {
 
       // Si hay cambios de stock, pedir nota antes de continuar
       if (stockChanges.length > 0) {
+        // Enriquecer cambios con nombre de variante
+        const existingVariants = product.product_variants || [];
+        stockChanges.forEach(ch => {
+          const v = existingVariants.find(vv => vv.id === ch.variantId);
+          ch.label = v ? `${v.color} · ${v.size}` : '?';
+        });
+
         const note = await new Promise((resolve) => {
           UI.closeSheet();
           const noteHtml = `
-            <p class="text-sm text-secondary mb-16">Estás ajustando stock en ${stockChanges.length} variante${stockChanges.length > 1 ? 's' : ''}. ¿Por qué?</p>
-            <div class="form-group">
+            <p class="text-sm text-secondary mb-8">Estás ajustando stock en:</p>
+            ${stockChanges.map(ch => `
+              <div class="flex-between mb-8">
+                <span class="text-sm"><strong>${ch.label}</strong></span>
+                <span class="text-sm">${ch.current} → <strong>${ch.newQty}</strong> <span class="${ch.diff > 0 ? 'text-success' : 'text-danger'}">(${ch.diff > 0 ? '+' : ''}${ch.diff})</span></span>
+              </div>
+            `).join('')}
+            <div class="form-group mt-16">
               <label>Nota del ajuste *</label>
               <input type="text" id="adjust-note" required placeholder="Ej: Conteo físico, corrección, etc.">
             </div>
