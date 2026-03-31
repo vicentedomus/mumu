@@ -826,6 +826,180 @@ a { color: var(--blue); text-decoration: none; }
 .gap-8 { gap: 8px; }
 .hidden { display: none !important; }
 
+/* ========== Charts ========== */
+.chart-bar-container {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 120px;
+  padding: 0 4px;
+}
+.chart-bar-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  justify-content: flex-end;
+}
+.chart-bar {
+  width: 100%;
+  border-radius: var(--r-sm) var(--r-sm) 4px 4px;
+  min-height: 4px;
+  transition: height 0.5s var(--ease);
+}
+.chart-bar-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+.chart-bar-value {
+  font-family: 'Varela Round', sans-serif;
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+}
+
+/* Horizontal bar chart */
+.chart-h-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.chart-h-bar-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 90px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chart-h-bar-track {
+  flex: 1;
+  height: 24px;
+  background: var(--surface-container);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  box-shadow: var(--clay-inner);
+}
+.chart-h-bar-fill {
+  height: 100%;
+  border-radius: var(--r-pill);
+  transition: width 0.6s var(--ease);
+  display: flex;
+  align-items: center;
+  padding-left: 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: white;
+  min-width: fit-content;
+}
+.chart-h-bar-extra {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  min-width: 60px;
+  text-align: right;
+}
+
+/* Period selector */
+.period-selector {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+}
+.period-chip {
+  padding: 8px 16px;
+  border-radius: var(--r-pill);
+  font-size: 0.8rem;
+  font-weight: 700;
+  border: none;
+  background: var(--surface-high);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--dur) var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.period-chip.active {
+  background: var(--blue);
+  color: white;
+  box-shadow: 0 2px 8px rgba(90, 139, 199, 0.2);
+}
+
+/* Comparison cards */
+.compare-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+}
+.compare-row + .compare-row {
+  border-top: 1px solid rgba(194, 199, 209, 0.10);
+}
+.compare-label {
+  flex: 1;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.compare-value {
+  font-family: 'Varela Round', sans-serif;
+  font-size: 1rem;
+  font-weight: 400;
+  min-width: 70px;
+  text-align: right;
+}
+.compare-change {
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  min-width: 50px;
+  text-align: center;
+}
+.compare-up {
+  background: #dceedd;
+  color: var(--sage-dark);
+}
+.compare-down {
+  background: var(--danger-light);
+  color: var(--danger);
+}
+.compare-neutral {
+  background: var(--surface-high);
+  color: var(--text-muted);
+}
+
+/* Consignment table */
+.consign-table {
+  width: 100%;
+  font-size: 0.82rem;
+}
+.consign-table th {
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.68rem;
+  padding: 8px 4px;
+  text-align: left;
+}
+.consign-table td {
+  padding: 8px 4px;
+  border-top: 1px solid rgba(194, 199, 209, 0.10);
+}
+.consign-table td:last-child,
+.consign-table th:last-child {
+  text-align: right;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
