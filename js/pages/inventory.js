@@ -185,9 +185,9 @@ function openProductForm(product, container, sb) {
       </div>
 
       <div class="section-divider mt-16 mb-8">
-        <span class="section-label">Preview de variantes</span>
+        <span class="section-label">${isEdit ? 'Preview de variantes' : 'Stock inicial (opcional)'}</span>
       </div>
-      <div id="variants-preview" class="text-sm text-muted mb-16"></div>
+      <div id="variants-preview" class="mb-16"></div>
 
       <button type="submit" class="btn btn-primary btn-full">${isEdit ? 'Guardar cambios' : 'Crear producto'}</button>
       ${isEdit ? '<button type="button" class="btn btn-outline btn-full mt-8 text-danger" id="delete-product-btn">Eliminar producto</button>' : ''}
@@ -243,14 +243,29 @@ function openProductForm(product, container, sb) {
     const colors = getSelectedColors();
     const preview = document.getElementById('variants-preview');
     if (sizes.length === 0 && colors.length === 0) {
-      preview.innerHTML = 'Selecciona al menos una talla o color';
+      preview.innerHTML = '<p class="text-sm text-muted">Selecciona al menos una talla o color</p>';
       return;
     }
     const s = sizes.length > 0 ? sizes : ['única'];
     const c = colors.length > 0 ? colors : ['único'];
     const combos = [];
-    s.forEach(size => c.forEach(color => combos.push(`${color} / ${size}`)));
-    preview.innerHTML = `<strong>${combos.length}</strong> variante${combos.length !== 1 ? 's' : ''}: ${combos.join(', ')}`;
+    s.forEach(size => c.forEach(color => combos.push({ size, color })));
+
+    if (isEdit) {
+      preview.innerHTML = `<p class="text-sm text-muted"><strong>${combos.length}</strong> variante${combos.length !== 1 ? 's' : ''}: ${combos.map(v => v.color + ' / ' + v.size).join(', ')}</p>`;
+    } else {
+      preview.innerHTML = `
+        <p class="text-sm text-secondary mb-8"><strong>${combos.length}</strong> variante${combos.length !== 1 ? 's' : ''}</p>
+        ${combos.map(v => `
+          <div class="flex-between mb-8" style="gap:8px">
+            <span class="text-sm" style="flex:1;min-width:0"><strong>${v.color}</strong> · ${v.size}</span>
+            <input type="number" class="stock-initial-input" data-size="${v.size}" data-color="${v.color}"
+              min="0" value="0" placeholder="0"
+              style="width:60px;padding:8px;text-align:center;font-size:0.85rem;border-radius:var(--r-sm);border:none;background:var(--surface-high);box-shadow:var(--clay-inner)">
+          </div>
+        `).join('')}
+      `;
+    }
   }
   updateVariantsPreview();
 
@@ -286,10 +301,26 @@ function openProductForm(product, container, sb) {
       const { data: newProd, error } = await sb.from('products').insert({ name, cost, sale_price, product_url, code: '' }).select().single();
       if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
 
-      // Crear todas las variantes (producto cartesiano)
+      // Obtener ubicación Casa para stock inicial
+      const { data: casaLoc } = await sb.from('locations').select('id').eq('name', 'Casa').single();
+
+      // Crear todas las variantes (producto cartesiano) + stock inicial
       for (const size of s) {
         for (const color of c) {
-          await sb.from('product_variants').insert({ product_id: newProd.id, size, color, sku: '' });
+          const { data: variant } = await sb.from('product_variants').insert({ product_id: newProd.id, size, color, sku: '' }).select().single();
+
+          // Stock inicial
+          if (variant && casaLoc) {
+            const input = document.querySelector(`.stock-initial-input[data-size="${size}"][data-color="${color}"]`);
+            const qty = parseInt(input?.value) || 0;
+            if (qty > 0) {
+              await sb.from('inventory').insert({ variant_id: variant.id, location_id: casaLoc.id, quantity: qty });
+              await sb.from('inventory_movements').insert({
+                variant_id: variant.id, to_location_id: casaLoc.id, quantity: qty,
+                type: 'ingreso', notes: 'Stock inicial'
+              });
+            }
+          }
         }
       }
     }
