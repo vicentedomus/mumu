@@ -1,13 +1,18 @@
-const CACHE_NAME = 'mumu-v1';
+const CACHE_NAME = 'mumu-v2';
 const ASSETS = [
   '/',
   '/index.html',
   '/css/styles.css',
-  '/css/components.css',
   '/js/app.js',
+  '/js/ui.js',
   '/js/router.js',
-  '/js/supabase-client.js',
   '/js/auth.js',
+  '/js/supabase-client.js',
+  '/js/pages/inventory.js',
+  '/js/pages/dashboard.js',
+  '/js/pages/sales.js',
+  '/js/pages/orders.js',
+  '/js/pages/reports.js',
   '/assets/logo.svg',
   '/manifest.json'
 ];
@@ -29,12 +34,19 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  // Network first for API calls, cache first for assets
+  // Skip API calls
   if (e.request.url.includes('supabase.co')) {
     e.respondWith(fetch(e.request));
     return;
   }
+  // Network first, fallback to cache
   e.respondWith(
-    caches.match(e.request).then((cached) => cached || fetch(e.request))
+    fetch(e.request)
+      .then((resp) => {
+        const clone = resp.clone();
+        caches.open(CACHE_NAME).then((c) => c.put(e.request, clone));
+        return resp;
+      })
+      .catch(() => caches.match(e.request))
   );
 });
