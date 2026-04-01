@@ -578,7 +578,7 @@ async function openProductDetail(product, container, sb) {
   const totalStock = variantData.reduce((s, v) => s + v.total, 0);
 
   const html = `
-    ${product.image_url ? `<div style="text-align:center;margin-bottom:16px"><img src="${product.image_url}" alt="" class="product-detail-img"></div>` : ''}
+    ${product.image_url ? `<div style="text-align:center;margin-bottom:16px"><img src="${product.image_url}" alt="" class="product-detail-img" id="product-thumb-img" style="cursor:pointer"></div>` : ''}
     <div class="mb-16">
       <div class="text-sm text-muted">${product.code} · ${variantData.length} variantes · ${totalStock} uds total</div>
       <div class="text-sm mt-8">Costo: <strong>$${product.cost}</strong> · Venta: <strong>$${product.sale_price}</strong> · <span class="text-success">Margen: $${margin} (${marginPct}%)</span></div>
@@ -654,6 +654,18 @@ async function openProductDetail(product, container, sb) {
 
   // Bind acciones iniciales
   bindVariantActions(body, locations, product, variantData, container, sb);
+
+  // Lightbox para imagen de producto
+  const thumbImg = document.getElementById('product-thumb-img');
+  if (thumbImg) {
+    thumbImg.addEventListener('click', () => {
+      const overlay = document.createElement('div');
+      overlay.className = 'lightbox-overlay';
+      overlay.innerHTML = `<img src="${product.image_url}" alt="" class="lightbox-img">`;
+      overlay.addEventListener('click', () => overlay.remove());
+      document.body.appendChild(overlay);
+    });
+  }
 }
 
 function sortVariants(variants, sortBy) {
