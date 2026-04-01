@@ -670,8 +670,56 @@ function sortVariants(variants, sortBy) {
 function renderVariantsTable(variants, locations) {
   if (variants.length === 0) return '<p class="text-sm text-muted" style="padding:16px 0">Sin resultados</p>';
 
-  return `
-    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+  const maxStock = Math.max(...variants.map(v => v.total), 1);
+
+  // Mobile: cards layout
+  const mobileHtml = `
+    <div class="variant-cards mobile-only">
+      ${variants.map(v => {
+        const badgeClass = v.total === 0 ? 'badge-low' : v.total <= 3 ? 'badge-low' : 'badge-stock';
+        const locsWithStock = locations.filter(l => (v.stockByLoc[l.name] || 0) > 0);
+        const locsWithout = locations.filter(l => (v.stockByLoc[l.name] || 0) === 0);
+        return `
+          <div class="variant-card" data-variant-id="${v.id}">
+            <div class="variant-card-header">
+              <div class="variant-card-title">${v.color} · ${v.size}</div>
+              <span class="badge ${badgeClass}">${v.total}</span>
+            </div>
+            <div class="variant-card-bars">
+              ${[...locsWithStock, ...locsWithout].map(l => {
+                const qty = v.stockByLoc[l.name] || 0;
+                const pct = maxStock > 0 ? Math.round((qty / maxStock) * 100) : 0;
+                return `
+                  <div class="variant-bar-row">
+                    <span class="variant-bar-label">${l.name}</span>
+                    <div class="variant-bar-track">
+                      <div class="variant-bar-fill ${qty === 0 ? 'variant-bar-empty' : ''}" style="width:${Math.max(pct, qty > 0 ? 8 : 0)}%"></div>
+                    </div>
+                    <span class="variant-bar-qty ${qty === 0 ? 'text-muted' : ''}">${qty}</span>
+                  </div>`;
+              }).join('')}
+            </div>
+            <div class="variant-card-actions">
+              <button class="variant-card-btn action-add-stock" data-variant-id="${v.id}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Stock
+              </button>
+              <button class="variant-card-btn action-transfer" data-variant-id="${v.id}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+                Trasladar
+              </button>
+              <button class="variant-card-btn variant-card-btn-primary action-sell" data-variant-id="${v.id}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                Vender
+              </button>
+            </div>
+          </div>`;
+      }).join('')}
+    </div>`;
+
+  // Desktop: table layout (unchanged)
+  const desktopHtml = `
+    <div class="desktop-only" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
       <table class="variants-table">
         <thead>
           <tr>
@@ -694,8 +742,8 @@ function renderVariantsTable(variants, locations) {
                   return `<td style="text-align:center"><span class="${qty === 0 ? 'text-muted' : ''}">${qty}</span></td>`;
                 }).join('')}
                 <td style="text-align:center"><span class="badge ${badgeClass}" style="font-size:0.68rem">${v.total}</span></td>
-                <td style="position:relative">
-                  <div class="variant-btns-inline desktop-only">
+                <td>
+                  <div class="variant-btns-inline" style="display:flex">
                     <button class="btn-icon action-add-stock" data-variant-id="${v.id}" title="+ Stock">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
@@ -706,55 +754,18 @@ function renderVariantsTable(variants, locations) {
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
                     </button>
                   </div>
-                  <div class="variant-menu-wrap mobile-only">
-                    <button class="btn-icon variant-menu-btn" data-variant-id="${v.id}">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
-                    </button>
-                    <div class="variant-actions-popup" id="vap-${v.id}">
-                      <button class="variant-action-item action-add-stock" data-variant-id="${v.id}">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                        Stock
-                      </button>
-                      <button class="variant-action-item action-transfer" data-variant-id="${v.id}">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
-                        Trasladar
-                      </button>
-                      <button class="variant-action-item action-sell" data-variant-id="${v.id}">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                        Vender
-                      </button>
-                    </div>
-                  </div>
                 </td>
               </tr>
             `;
           }).join('')}
         </tbody>
       </table>
-    </div>
-  `;
+    </div>`;
+
+  return mobileHtml + desktopHtml;
 }
 
 function bindVariantActions(body, locations, product, variants, container, sb) {
-  // Menu toggle
-  body.querySelectorAll('.variant-menu-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const vid = btn.dataset.variantId;
-      const popup = document.getElementById(`vap-${vid}`);
-      // Close all other popups
-      body.querySelectorAll('.variant-actions-popup.show').forEach(p => { if (p !== popup) p.classList.remove('show'); });
-      popup.classList.toggle('show');
-    });
-  });
-
-  // Close popups on outside click
-  body.addEventListener('click', (e) => {
-    if (!e.target.closest('.variant-menu-btn') && !e.target.closest('.variant-actions-popup')) {
-      body.querySelectorAll('.variant-actions-popup.show').forEach(p => p.classList.remove('show'));
-    }
-  });
-
   body.querySelectorAll('.action-add-stock').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
