@@ -695,7 +695,7 @@ function renderVariantsTable(variants, locations) {
                 }).join('')}
                 <td style="text-align:center"><span class="badge ${badgeClass}" style="font-size:0.68rem">${v.total}</span></td>
                 <td style="position:relative">
-                  <div class="desktop-only" style="display:flex;gap:4px;justify-content:flex-end">
+                  <div class="variant-btns-inline desktop-only">
                     <button class="btn-icon action-add-stock" data-variant-id="${v.id}" title="+ Stock">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
@@ -706,7 +706,7 @@ function renderVariantsTable(variants, locations) {
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
                     </button>
                   </div>
-                  <div class="mobile-only">
+                  <div class="variant-menu-wrap mobile-only">
                     <button class="btn-icon variant-menu-btn" data-variant-id="${v.id}">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
                     </button>

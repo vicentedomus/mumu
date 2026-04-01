@@ -1196,6 +1196,17 @@ a { color: var(--blue); text-decoration: none; }
 .desktop-only { display: none !important; }
 .mobile-only { display: block; }
 
+/* Variant inline buttons (desktop) */
+.variant-btns-inline {
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+/* Variant menu wrap (mobile) */
+.variant-menu-wrap {
+  position: relative;
+}
+
 /* Desktop: >= 768px */
 @media (min-width: 768px) {
   .desktop-only { display: flex !important; }
