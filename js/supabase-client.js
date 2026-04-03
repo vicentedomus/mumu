@@ -142,6 +142,7 @@ function wrapSupabaseForSandbox(sb) {
   // Build a fake write chain that records the op and returns success
   function createWriteChain(table, method, data) {
     const filters = [];
+    let wantsSelect = false;
 
     function resolve() {
       const idFilter = filters.find(f => f.col === 'id');
@@ -154,8 +155,16 @@ function wrapSupabaseForSandbox(sb) {
         SandboxStore.hide(table, id);
       }
 
+      // For inserts, generate a fake record with a sandbox UUID so chained
+      // operations (insert → use id → insert child) don't crash
+      let fakeData = null;
+      if (method === 'insert' && wantsSelect) {
+        const fakeId = 'sandbox-' + Math.random().toString(36).slice(2, 10);
+        fakeData = { id: fakeId, ...(Array.isArray(data) ? data[0] : data) };
+      }
+
       console.log(`[SANDBOX] ${method} ${table}:`, data, filters);
-      return Promise.resolve({ data: null, error: null });
+      return Promise.resolve({ data: fakeData, error: null });
     }
 
     const chain = new Proxy({}, {
@@ -164,7 +173,7 @@ function wrapSupabaseForSandbox(sb) {
         if (prop === 'neq')    return () => chain;
         if (prop === 'in')     return () => chain;
         if (prop === 'not')    return () => chain;
-        if (prop === 'select') return () => chain;
+        if (prop === 'select') return () => { wantsSelect = true; return chain; };
         if (prop === 'single') return () => resolve();
         if (prop === 'order')  return () => chain;
         if (prop === 'limit')  return () => chain;
@@ -193,6 +202,33 @@ function wrapSupabaseForSandbox(sb) {
           }
           return Promise.resolve({ data: null, error: null });
         };
+      }
+      // Block storage writes in sandbox (uploads, remove, etc.)
+      if (prop === 'storage') {
+        const realStorage = target.storage;
+        return new Proxy(realStorage, {
+          get(st, stProp) {
+            if (stProp === 'from') {
+              return (bucket) => {
+                const realBucket = st.from(bucket);
+                return new Proxy(realBucket, {
+                  get(b, bProp) {
+                    if (['upload', 'remove', 'move', 'copy'].includes(bProp)) {
+                      return (...args) => {
+                        console.log(`[SANDBOX] storage.${bProp} en ${bucket} bloqueado`);
+                        return Promise.resolve({ data: { Key: 'sandbox-fake.jpg' }, error: null });
+                      };
+                    }
+                    const val = b[bProp];
+                    return typeof val === 'function' ? val.bind(b) : val;
+                  }
+                });
+              };
+            }
+            const val = st[stProp];
+            return typeof val === 'function' ? val.bind(st) : val;
+          }
+        });
       }
       const val = target[prop];
       return typeof val === 'function' ? val.bind(target) : val;
