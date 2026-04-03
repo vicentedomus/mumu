@@ -38,7 +38,6 @@ function wrapSupabaseForSandbox(sb) {
                 return (data) => {
                   UI.toast(`Sandbox: ${method} en ${table} bloqueado`, 'warning');
                   console.log(`[SANDBOX] ${method} ${table}:`, data);
-                  // Retornar objeto compatible con la API de Supabase
                   const fakeResult = { data: null, error: null };
                   const chainable = {
                     select: () => chainable,
@@ -46,27 +45,30 @@ function wrapSupabaseForSandbox(sb) {
                     then: (fn) => Promise.resolve(fakeResult).then(fn),
                     eq: () => chainable,
                     neq: () => chainable,
+                    not: () => chainable,
                     order: () => chainable,
                     limit: () => chainable,
                   };
                   return chainable;
                 };
               }
-              return q[method];
+              // Lecturas: bind al query original para mantener el this correcto
+              const val = q[method];
+              return typeof val === 'function' ? val.bind(q) : val;
             }
           });
         };
       }
       if (prop === 'rpc') {
         return (fnName, params) => {
-          if (!Sandbox.isActive()) return target.rpc(fnName, params);
           UI.toast(`Sandbox: rpc ${fnName} bloqueado`, 'warning');
           console.log(`[SANDBOX] rpc ${fnName}:`, params);
           return Promise.resolve({ data: null, error: null });
         };
       }
       // storage, auth, etc. — pasar directamente
-      return target[prop];
+      const val = target[prop];
+      return typeof val === 'function' ? val.bind(target) : val;
     }
   });
 }
