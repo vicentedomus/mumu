@@ -68,6 +68,15 @@ async function renderProductList(container, sb) {
       if (product) openProductDetail(product, container, sb);
     });
   });
+
+  // Botón editar directo desde la lista
+  document.querySelectorAll('.product-edit-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const product = products.find(p => p.id === btn.dataset.id);
+      if (product) openProductForm(product, container, sb);
+    });
+  });
 }
 
 function renderProductCard(p) {
@@ -98,11 +107,16 @@ function renderProductCard(p) {
             </div>
           </div>
         </div>
-        <div class="text-right">
-          <div class="stat-value" style="font-size:1.3rem">${totalStock}</div>
-          <span class="badge ${totalStock === 0 ? 'badge-low' : totalStock <= 3 ? 'badge-low' : 'badge-stock'}">
-            ${totalStock === 0 ? 'Sin stock' : totalStock <= 3 ? 'Stock bajo' : 'En stock'}
-          </span>
+        <div style="display:flex;align-items:flex-start;gap:8px">
+          <div class="text-right">
+            <div class="stat-value" style="font-size:1.3rem">${totalStock}</div>
+            <span class="badge ${totalStock === 0 ? 'badge-low' : totalStock <= 3 ? 'badge-low' : 'badge-stock'}">
+              ${totalStock === 0 ? 'Sin stock' : totalStock <= 3 ? 'Stock bajo' : 'En stock'}
+            </span>
+          </div>
+          <button class="btn-icon product-edit-btn" data-id="${p.id}" title="Editar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </button>
         </div>
       </div>
       ${Object.keys(stockByLoc).length > 0 ? `

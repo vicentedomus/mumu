@@ -39,7 +39,7 @@
     } else {
       Sandbox.enable();
       showSandboxBanner();
-      UI.toast('Sandbox activado — escrituras bloqueadas');
+      UI.toast('Sandbox activado — cambios temporales');
     }
   });
 
@@ -63,7 +63,7 @@
     const banner = document.createElement('div');
     banner.id = 'sandbox-banner';
     banner.innerHTML = `
-      <span>MODO SANDBOX — Los cambios NO se guardan</span>
+      <span>MODO SANDBOX — Cambios temporales, no se guardan</span>
       <button id="sandbox-exit-btn">Salir</button>
     `;
     document.body.prepend(banner);

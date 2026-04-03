@@ -587,6 +587,7 @@ a { color: var(--blue); text-decoration: none; }
   max-width: 480px;
   max-height: 90dvh;
   overflow-y: auto;
+  will-change: transform;
   padding: 8px 24px calc(24px + var(--safe-bottom));
   box-shadow: var(--clay-float);
   animation: sheetIn 0.35s var(--ease);
