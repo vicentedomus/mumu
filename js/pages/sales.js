@@ -102,10 +102,15 @@ async function renderSalesList(container, sb, locations, filters) {
               <div class="list-item-title">${s.product_variants?.products?.name || 'Producto'}</div>
               <div class="list-item-sub">${s.product_variants?.color || ''} ${s.product_variants?.size || ''} · x${s.quantity} · ${s.locations?.name || ''}</div>
             </div>
-            <div class="list-item-right">
-              <strong>$${(s.unit_price * s.quantity).toLocaleString()}</strong>
-              ${s.commission_amount > 0 ? `<div class="text-sm text-muted">-$${s.commission_amount.toLocaleString()}</div>` : ''}
-              <div class="text-sm text-muted">${new Date(s.created_at).toLocaleDateString('es-CL')}</div>
+            <div class="list-item-right" style="display:flex;align-items:center;gap:8px">
+              <div style="text-align:right">
+                <strong>$${(s.unit_price * s.quantity).toLocaleString()}</strong>
+                ${s.commission_amount > 0 ? `<div class="text-sm text-muted">-$${s.commission_amount.toLocaleString()}</div>` : ''}
+                <div class="text-sm text-muted">${new Date(s.created_at).toLocaleDateString('es-CL')}</div>
+              </div>
+              <button class="btn-icon delete-sale-btn" data-sale-id="${s.id}" title="Eliminar venta" style="flex-shrink:0;color:var(--danger)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:18px;height:18px"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              </button>
             </div>
           </div>
         `).join('')
@@ -126,6 +131,24 @@ async function renderSalesList(container, sb, locations, filters) {
   document.getElementById('filter-location').addEventListener('change', applyFilters);
   document.getElementById('filter-from').addEventListener('change', applyFilters);
   document.getElementById('filter-to').addEventListener('change', applyFilters);
+
+  // Eliminar venta
+  document.querySelectorAll('.delete-sale-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const saleId = btn.dataset.saleId;
+      const sale = sales.find(s => s.id === saleId);
+      const label = `${sale?.product_variants?.products?.name || 'Producto'} (x${sale?.quantity})`;
+      const ok = await UI.confirm(`¿Eliminar venta de ${label}? Se devolverá el stock.`);
+      if (!ok) return;
+
+      const { error } = await sb.rpc('delete_sale', { p_sale_id: saleId });
+      if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
+
+      UI.toast('Venta eliminada — stock devuelto');
+      await renderSalesList(container, sb, locations, filters);
+    });
+  });
 }
 
 // ============================================
@@ -223,26 +246,28 @@ async function openNewSaleForm(locations, container, sb) {
   // Submit
   document.getElementById('new-sale-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const variantId = document.getElementById('ns-variant').value;
-    const locationId = document.getElementById('ns-location').value;
-    const quantity = parseInt(document.getElementById('ns-quantity').value);
+    const btn = document.getElementById('ns-submit');
+    await UI.withLoading(btn, async () => {
+      const variantId = document.getElementById('ns-variant').value;
+      const locationId = document.getElementById('ns-location').value;
+      const quantity = parseInt(document.getElementById('ns-quantity').value);
 
-    if (!variantId) { UI.toast('Selecciona una variante', 'error'); return; }
+      if (!variantId) { UI.toast('Selecciona una variante', 'error'); return; }
 
-    const { error } = await sb.rpc('register_sale', {
-      p_variant_id: variantId, p_location_id: locationId, p_quantity: quantity
+      const { error } = await sb.rpc('register_sale', {
+        p_variant_id: variantId, p_location_id: locationId, p_quantity: quantity
+      });
+
+      if (error) {
+        UI.toast(error.message.includes('insuficiente') ? 'Stock insuficiente' : 'Error: ' + error.message, 'error');
+        return;
+      }
+
+      UI.closeSheet();
+      UI.toast('Venta registrada');
+      location.hash = '#/sales';
+      Router.navigate('#/sales');
     });
-
-    if (error) {
-      UI.toast(error.message.includes('insuficiente') ? 'Stock insuficiente' : 'Error: ' + error.message, 'error');
-      return;
-    }
-
-    UI.closeSheet();
-    UI.toast('Venta registrada');
-    // Re-render
-    location.hash = '#/sales';
-    Router.navigate('#/sales');
   });
 }
 

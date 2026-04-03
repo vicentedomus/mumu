@@ -374,6 +374,8 @@ async function openProductForm(product, container, sb) {
   // --- Submit ---
   document.getElementById('product-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    await UI.withLoading(btn, async () => {
     const name = document.getElementById('pf-name').value.trim();
     const cost = parseFloat(document.getElementById('pf-cost').value) || 0;
     const sale_price = parseFloat(document.getElementById('pf-price').value) || 0;
@@ -483,10 +485,13 @@ async function openProductForm(product, container, sb) {
 
       // Crear variantes nuevas (las que no existían)
       const existingCombos = (product.product_variants || []).map(v => `${v.size}|${v.color}`);
+      const editProductCode = product.code || await SKU.generateProductCode(sb);
+      if (!product.code) await sb.from('products').update({ code: editProductCode }).eq('id', product.id);
       for (const size of s) {
         for (const color of c) {
           if (!existingCombos.includes(`${size}|${color}`)) {
-            const { data: newVar } = await sb.from('product_variants').insert({ product_id: product.id, size, color, sku: '' }).select().single();
+            const sku = await SKU.ensureUniqueSKU(sb, SKU.generateSKU(editProductCode, color, size));
+            const { data: newVar } = await sb.from('product_variants').insert({ product_id: product.id, size, color, sku }).select().single();
             // Stock inicial para variante nueva
             if (newVar) {
               const input = document.querySelector(`.stock-initial-input[data-size="${size}"][data-color="${color}"]`);
@@ -503,8 +508,9 @@ async function openProductForm(product, container, sb) {
         }
       }
     } else {
-      // Crear producto
-      const { data: newProd, error } = await sb.from('products').insert({ name, cost, sale_price, image_url, code: '' }).select().single();
+      // Crear producto con código auto-generado
+      const productCode = await SKU.generateProductCode(sb);
+      const { data: newProd, error } = await sb.from('products').insert({ name, cost, sale_price, image_url, code: productCode }).select().single();
       if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
 
       // Ubicación seleccionada para stock inicial
@@ -513,7 +519,8 @@ async function openProductForm(product, container, sb) {
       // Crear todas las variantes (producto cartesiano) + stock inicial
       for (const size of s) {
         for (const color of c) {
-          const { data: variant } = await sb.from('product_variants').insert({ product_id: newProd.id, size, color, sku: '' }).select().single();
+          const sku = await SKU.ensureUniqueSKU(sb, SKU.generateSKU(productCode, color, size));
+          const { data: variant } = await sb.from('product_variants').insert({ product_id: newProd.id, size, color, sku }).select().single();
 
           // Stock inicial en la ubicación seleccionada
           if (variant && stockLocationId) {
@@ -534,6 +541,7 @@ async function openProductForm(product, container, sb) {
     UI.closeSheet();
     UI.toast(isEdit ? 'Producto actualizado' : 'Producto creado');
     await renderProductList(container, sb);
+    }); // withLoading
   });
 
   // Eliminar
@@ -884,6 +892,8 @@ function openAddStockForm(variantId, locations, product, variants, container, sb
 
   document.getElementById('add-stock-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    await UI.withLoading(btn, async () => {
 
     // Detectar cambios
     const changes = [];
@@ -954,6 +964,7 @@ function openAddStockForm(variantId, locations, product, variants, container, sb
 
     UI.toast('Stock actualizado');
     await renderProductList(container, sb);
+    }); // withLoading
   });
 }
 
@@ -993,24 +1004,27 @@ function openTransferForm(variantId, locations, product, variants, container, sb
 
   document.getElementById('transfer-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const fromId = document.getElementById('tf-from').value;
-    const toId = document.getElementById('tf-to').value;
-    const quantity = parseInt(document.getElementById('tf-quantity').value);
+    const btn = e.target.querySelector('button[type="submit"]');
+    await UI.withLoading(btn, async () => {
+      const fromId = document.getElementById('tf-from').value;
+      const toId = document.getElementById('tf-to').value;
+      const quantity = parseInt(document.getElementById('tf-quantity').value);
 
-    if (fromId === toId) { UI.toast('Origen y destino son iguales', 'error'); return; }
+      if (fromId === toId) { UI.toast('Origen y destino son iguales', 'error'); return; }
 
-    const { error } = await sb.rpc('transfer_stock', {
-      p_variant_id: variantId, p_from_location: fromId, p_to_location: toId, p_quantity: quantity
+      const { error } = await sb.rpc('transfer_stock', {
+        p_variant_id: variantId, p_from_location: fromId, p_to_location: toId, p_quantity: quantity
+      });
+
+      if (error) {
+        UI.toast(error.message.includes('insuficiente') ? 'Stock insuficiente en origen' : 'Error: ' + error.message, 'error');
+        return;
+      }
+
+      UI.closeSheet();
+      UI.toast(`${quantity} unidades trasladadas`);
+      await renderProductList(container, sb);
     });
-
-    if (error) {
-      UI.toast(error.message.includes('insuficiente') ? 'Stock insuficiente en origen' : 'Error: ' + error.message, 'error');
-      return;
-    }
-
-    UI.closeSheet();
-    UI.toast(`${quantity} unidades trasladadas`);
-    await renderProductList(container, sb);
   });
 }
 
@@ -1072,20 +1086,23 @@ function openQuickSaleForm(variantId, locations, product, variants, container, s
 
   document.getElementById('sale-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const locationId = document.getElementById('sf-location').value;
-    const quantity = parseInt(document.getElementById('sf-quantity').value);
+    const btn = e.target.querySelector('button[type="submit"]');
+    await UI.withLoading(btn, async () => {
+      const locationId = document.getElementById('sf-location').value;
+      const quantity = parseInt(document.getElementById('sf-quantity').value);
 
-    const { error } = await sb.rpc('register_sale', {
-      p_variant_id: variantId, p_location_id: locationId, p_quantity: quantity
+      const { error } = await sb.rpc('register_sale', {
+        p_variant_id: variantId, p_location_id: locationId, p_quantity: quantity
+      });
+
+      if (error) {
+        UI.toast(error.message.includes('insuficiente') ? 'Stock insuficiente' : 'Error: ' + error.message, 'error');
+        return;
+      }
+
+      UI.closeSheet();
+      UI.toast('Venta registrada');
+      await renderProductList(container, sb);
     });
-
-    if (error) {
-      UI.toast(error.message.includes('insuficiente') ? 'Stock insuficiente' : 'Error: ' + error.message, 'error');
-      return;
-    }
-
-    UI.closeSheet();
-    UI.toast('Venta registrada');
-    await renderProductList(container, sb);
   });
 }

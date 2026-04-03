@@ -942,6 +942,25 @@ a { color: var(--blue); text-decoration: none; }
 .toast-show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast-success { background: var(--sage-dark); color: white; }
 .toast-error { background: var(--danger); color: white; }
+.toast-warning { background: #c59a2e; color: white; }
+
+/* ========== Sandbox Banner ========== */
+#sandbox-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 8px 16px;
+  background: #f5c842; color: #5a4200;
+  font-size: 0.8rem; font-weight: 700; text-align: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+#sandbox-banner button {
+  padding: 4px 12px; border: 1px solid #5a4200; border-radius: 6px;
+  background: transparent; color: #5a4200; font-weight: 700; font-size: 0.75rem;
+  cursor: pointer;
+}
+#sandbox-banner button:hover { background: rgba(90,66,0,0.1); }
+body.sandbox-mode .page-header { margin-top: 36px; }
+body.sandbox-mode #page-content { margin-top: 0; }
 
 /* ========== Welcome Section ========== */
 .welcome-section {

@@ -382,13 +382,150 @@ async function openNewOrderForm(container, sb) {
       const sizes = [...new Set((product.product_variants || []).map(v => v.size))];
       const colors = [...new Set((product.product_variants || []).map(v => v.color))];
 
-      sizeSelect.innerHTML = sizes.map(s => `<option value="${s}">${s}</option>`).join('');
+      sizeSelect.innerHTML = sizes.map(s => `<option value="${s}">${s}</option>`).join('')
+        + '<option value="__new_size__">+ Nueva talla...</option>';
       sizeSelect.disabled = false;
-      colorSelect.innerHTML = colors.map(c => `<option value="${c}">${c}</option>`).join('');
+      colorSelect.innerHTML = colors.map(c => `<option value="${c}">${c}</option>`).join('')
+        + '<option value="__new_color__">+ Nuevo color...</option>';
       colorSelect.disabled = false;
 
       resolveVariant(idx);
       updateOrderTotal();
+    }
+
+    // Nueva talla
+    if (e.target.classList.contains('oi-size') && e.target.value === '__new_size__') {
+      const idx = e.target.dataset.idx;
+      const productId = document.querySelector(`.oi-product[data-idx="${idx}"]`)?.value;
+      const product = productsList.find(p => p.id === productId);
+      if (!product) return;
+
+      const existingSizes = [...new Set((product.product_variants || []).map(v => v.size))];
+      const ALL_SIZES = ['única', 'N/A', '0-3', '3-6', '6-9', '9-12', '12-18', '18-24'];
+      const availableSizes = ALL_SIZES.filter(s => !existingSizes.includes(s));
+
+      e.target.value = existingSizes[0] || '';
+
+      if (availableSizes.length === 0) {
+        UI.toast('Ya tiene todas las tallas', 'error');
+        return;
+      }
+
+      const sizeHtml = `
+        <p class="text-sm text-muted mb-8">Selecciona talla a agregar para <strong>${product.name}</strong>:</p>
+        <div class="chip-selector" id="new-size-chips">
+          ${availableSizes.map(s => `<button type="button" class="chip" data-value="${s}">${s}</button>`).join('')}
+        </div>
+        <button class="btn btn-primary btn-full mt-16" id="new-size-confirm" disabled>Agregar talla</button>
+      `;
+      UI.openSheet('Nueva talla', sizeHtml);
+
+      let selectedSize = null;
+      document.getElementById('new-size-chips').addEventListener('click', (ev) => {
+        const chip = ev.target.closest('.chip');
+        if (!chip) return;
+        document.querySelectorAll('#new-size-chips .chip').forEach(c => c.classList.remove('chip-active'));
+        chip.classList.add('chip-active');
+        selectedSize = chip.dataset.value;
+        document.getElementById('new-size-confirm').disabled = false;
+      });
+
+      document.getElementById('new-size-confirm').addEventListener('click', async () => {
+        if (!selectedSize) return;
+        const btn = document.getElementById('new-size-confirm');
+        await UI.withLoading(btn, async () => {
+          const existingColors = [...new Set((product.product_variants || []).map(v => v.color))];
+          const productCode = product.code || await SKU.generateProductCode(sb);
+          if (!product.code) {
+            await sb.from('products').update({ code: productCode }).eq('id', product.id);
+            product.code = productCode;
+          }
+
+          for (const color of existingColors) {
+            const sku = await SKU.ensureUniqueSKU(sb, SKU.generateSKU(productCode, color, selectedSize));
+            const { data: newVar } = await sb.from('product_variants')
+              .insert({ product_id: product.id, size: selectedSize, color, sku })
+              .select().single();
+            if (newVar) product.product_variants.push(newVar);
+          }
+
+          UI.closeSheet();
+          UI.toast(`Talla ${selectedSize} agregada`);
+
+          // Refrescar dropdowns del ítem
+          const sizeSelect = document.querySelector(`.oi-size[data-idx="${idx}"]`);
+          const colorSelect = document.querySelector(`.oi-color[data-idx="${idx}"]`);
+          const sizes = [...new Set(product.product_variants.map(v => v.size))];
+          const colors = [...new Set(product.product_variants.map(v => v.color))];
+          sizeSelect.innerHTML = sizes.map(s => `<option value="${s}">${s}</option>`).join('')
+            + '<option value="__new_size__">+ Nueva talla...</option>';
+          colorSelect.innerHTML = colors.map(c => `<option value="${c}">${c}</option>`).join('')
+            + '<option value="__new_color__">+ Nuevo color...</option>';
+          sizeSelect.value = selectedSize;
+          resolveVariant(idx);
+        });
+      });
+      return;
+    }
+
+    // Nuevo color
+    if (e.target.classList.contains('oi-color') && e.target.value === '__new_color__') {
+      const idx = e.target.dataset.idx;
+      const productId = document.querySelector(`.oi-product[data-idx="${idx}"]`)?.value;
+      const product = productsList.find(p => p.id === productId);
+      if (!product) return;
+
+      const existingColors = [...new Set((product.product_variants || []).map(v => v.color))];
+      e.target.value = existingColors[0] || '';
+
+      const colorHtml = `
+        <p class="text-sm text-muted mb-8">Nuevo color para <strong>${product.name}</strong>:</p>
+        <div class="form-group">
+          <input type="text" id="new-color-input" placeholder="Nombre del color (ej: rosa)" autofocus>
+        </div>
+        <button class="btn btn-primary btn-full" id="new-color-confirm">Agregar color</button>
+      `;
+      UI.openSheet('Nuevo color', colorHtml);
+
+      document.getElementById('new-color-confirm').addEventListener('click', async () => {
+        const colorName = document.getElementById('new-color-input').value.trim().toLowerCase();
+        if (!colorName) { UI.toast('Escribe un color', 'error'); return; }
+        if (existingColors.includes(colorName)) { UI.toast('Ese color ya existe', 'error'); return; }
+
+        const btn = document.getElementById('new-color-confirm');
+        await UI.withLoading(btn, async () => {
+          const existingSizes = [...new Set((product.product_variants || []).map(v => v.size))];
+          const productCode = product.code || await SKU.generateProductCode(sb);
+          if (!product.code) {
+            await sb.from('products').update({ code: productCode }).eq('id', product.id);
+            product.code = productCode;
+          }
+
+          for (const size of existingSizes) {
+            const sku = await SKU.ensureUniqueSKU(sb, SKU.generateSKU(productCode, colorName, size));
+            const { data: newVar } = await sb.from('product_variants')
+              .insert({ product_id: product.id, size, color: colorName, sku })
+              .select().single();
+            if (newVar) product.product_variants.push(newVar);
+          }
+
+          UI.closeSheet();
+          UI.toast(`Color ${colorName} agregado`);
+
+          // Refrescar dropdowns del ítem
+          const sizeSelect = document.querySelector(`.oi-size[data-idx="${idx}"]`);
+          const colorSelect = document.querySelector(`.oi-color[data-idx="${idx}"]`);
+          const sizes = [...new Set(product.product_variants.map(v => v.size))];
+          const colors = [...new Set(product.product_variants.map(v => v.color))];
+          sizeSelect.innerHTML = sizes.map(s => `<option value="${s}">${s}</option>`).join('')
+            + '<option value="__new_size__">+ Nueva talla...</option>';
+          colorSelect.innerHTML = colors.map(c => `<option value="${c}">${c}</option>`).join('')
+            + '<option value="__new_color__">+ Nuevo color...</option>';
+          colorSelect.value = colorName;
+          resolveVariant(idx);
+        });
+      });
+      return;
     }
 
     if (e.target.classList.contains('oi-size') || e.target.classList.contains('oi-color')) {
@@ -460,51 +597,50 @@ async function openNewOrderForm(container, sb) {
   // Submit
   document.getElementById('new-order-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const btn = document.getElementById('no-submit');
+    await UI.withLoading(btn, async () => {
+      const supplier = document.getElementById('no-supplier').value.trim() || '';
+      const destination_location_id = document.getElementById('no-destination').value;
+      const shipping_cost = parseFloat(document.getElementById('no-shipping').value) || 0;
+      const taxes = parseFloat(document.getElementById('no-taxes').value) || 0;
+      const estimated_arrival = document.getElementById('no-arrival').value || null;
+      const notes = document.getElementById('no-notes').value.trim() || null;
 
-    const supplier = document.getElementById('no-supplier').value.trim() || '';
-    const destination_location_id = document.getElementById('no-destination').value;
-    const shipping_cost = parseFloat(document.getElementById('no-shipping').value) || 0;
-    const taxes = parseFloat(document.getElementById('no-taxes').value) || 0;
-    const estimated_arrival = document.getElementById('no-arrival').value || null;
-    const notes = document.getElementById('no-notes').value.trim() || null;
-
-    // Collect items
-    const items = [];
-    let productTotal = 0;
-    document.querySelectorAll('.order-item-row').forEach(row => {
-      const variantId = row.querySelector('.oi-variant')?.value;
-      const qty = parseInt(row.querySelector('.oi-qty')?.value) || 0;
-      const cost = parseFloat(row.querySelector('.oi-cost')?.value) || 0;
-      // Recoger todos los links del ítem
-      const links = [...row.querySelectorAll('.oi-source-url')].map(i => i.value.trim()).filter(Boolean);
-      const source_url = links.length > 0 ? links.join('\n') : null;
-      if (variantId && qty > 0) {
-        items.push({ variant_id: variantId, quantity: qty, unit_cost: cost, source_url });
-        productTotal += qty * cost;
-      }
-    });
-
-    if (items.length === 0) { UI.toast('Agrega al menos un artículo', 'error'); return; }
-
-    const total = productTotal + shipping_cost + taxes;
-
-    // Crear pedido
-    const { data: newOrder, error } = await sb.from('purchase_orders')
-      .insert({ supplier, destination_location_id, shipping_cost, taxes, total, estimated_arrival, notes, status: 'ordered' })
-      .select().single();
-
-    if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
-
-    // Crear ítems
-    for (const item of items) {
-      await sb.from('purchase_order_items').insert({
-        order_id: newOrder.id, variant_id: item.variant_id, quantity: item.quantity, unit_cost: item.unit_cost, source_url: item.source_url
+      // Collect items
+      const items = [];
+      let productTotal = 0;
+      document.querySelectorAll('.order-item-row').forEach(row => {
+        const variantId = row.querySelector('.oi-variant')?.value;
+        const qty = parseInt(row.querySelector('.oi-qty')?.value) || 0;
+        const cost = parseFloat(row.querySelector('.oi-cost')?.value) || 0;
+        const links = [...row.querySelectorAll('.oi-source-url')].map(i => i.value.trim()).filter(Boolean);
+        const source_url = links.length > 0 ? links.join('\n') : null;
+        if (variantId && qty > 0) {
+          items.push({ variant_id: variantId, quantity: qty, unit_cost: cost, source_url });
+          productTotal += qty * cost;
+        }
       });
-    }
 
-    UI.closeSheet();
-    UI.toast('Pedido creado');
-    await renderOrdersList(container, sb);
+      if (items.length === 0) { UI.toast('Agrega al menos un artículo', 'error'); return; }
+
+      const total = productTotal + shipping_cost + taxes;
+
+      const { data: newOrder, error } = await sb.from('purchase_orders')
+        .insert({ supplier, destination_location_id, shipping_cost, taxes, total, estimated_arrival, notes, status: 'ordered' })
+        .select().single();
+
+      if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
+
+      for (const item of items) {
+        await sb.from('purchase_order_items').insert({
+          order_id: newOrder.id, variant_id: item.variant_id, quantity: item.quantity, unit_cost: item.unit_cost, source_url: item.source_url
+        });
+      }
+
+      UI.closeSheet();
+      UI.toast('Pedido creado');
+      await renderOrdersList(container, sb);
+    });
   });
 }
 
@@ -587,25 +723,30 @@ async function openProductFormForOrder(container, sb, onCreated) {
   // Submit
   document.getElementById('quick-product-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const name = document.getElementById('qp-name').value.trim();
-    const cost = parseFloat(document.getElementById('qp-cost').value) || 0;
-    const sale_price = parseFloat(document.getElementById('qp-price').value) || 0;
+    const btn = e.target.querySelector('button[type="submit"]');
+    await UI.withLoading(btn, async () => {
+      const name = document.getElementById('qp-name').value.trim();
+      const cost = parseFloat(document.getElementById('qp-cost').value) || 0;
+      const sale_price = parseFloat(document.getElementById('qp-price').value) || 0;
 
-    const sizes = [...document.querySelectorAll('#qp-sizes .chip-active')].map(c => c.dataset.value);
-    const colors = [...document.querySelectorAll('#qp-colors .chip')].map(c => c.dataset.value);
-    const s = sizes.length > 0 ? sizes : ['única'];
-    const c = colors.length > 0 ? colors : ['único'];
+      const sizes = [...document.querySelectorAll('#qp-sizes .chip-active')].map(c => c.dataset.value);
+      const colors = [...document.querySelectorAll('#qp-colors .chip')].map(c => c.dataset.value);
+      const s = sizes.length > 0 ? sizes : ['única'];
+      const c = colors.length > 0 ? colors : ['único'];
 
-    const { data: newProd, error } = await sb.from('products').insert({ name, cost, sale_price, code: '' }).select().single();
-    if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
+      const productCode = await SKU.generateProductCode(sb);
+      const { data: newProd, error } = await sb.from('products').insert({ name, cost, sale_price, code: productCode }).select().single();
+      if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
 
-    for (const size of s) {
-      for (const color of c) {
-        await sb.from('product_variants').insert({ product_id: newProd.id, size, color, sku: '' });
+      for (const size of s) {
+        for (const color of c) {
+          const sku = await SKU.ensureUniqueSKU(sb, SKU.generateSKU(productCode, color, size));
+          await sb.from('product_variants').insert({ product_id: newProd.id, size, color, sku });
+        }
       }
-    }
 
-    UI.closeSheet();
-    if (onCreated) onCreated(newProd);
+      UI.closeSheet();
+      if (onCreated) onCreated(newProd);
+    });
   });
 }

@@ -3,3 +3,8 @@ node_modules/
 .env.local
 .DS_Store
 *.log
+package.json
+package-lock.json
+playwright.config.js
+tests/
+test-results/

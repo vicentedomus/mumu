@@ -51,6 +51,20 @@ const UI = {
     }, 2500);
   },
 
+  // Protección contra doble submit — deshabilita botón durante operación async
+  async withLoading(btn, fn) {
+    if (btn.disabled) return;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Procesando...';
+    try {
+      await fn();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  },
+
   // Confirmar acción
   async confirm(message) {
     return new Promise((resolve) => {
