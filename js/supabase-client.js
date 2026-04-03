@@ -73,6 +73,11 @@ const SandboxStore = {
   }
 };
 
+// Dynamic proxy: routes each call to sandbox proxy or real client at call-time,
+// so code that captured `sb = getSupabase()` early still goes through sandbox
+// if it was enabled later.
+let _dynamicProxy = null;
+
 function getSupabase() {
   if (!_supabase) {
     if (!CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_ANON_KEY) {
@@ -83,8 +88,15 @@ function getSupabase() {
       db: { schema: CONFIG.SUPABASE_SCHEMA }
     });
     _supabaseProxy = wrapSupabaseForSandbox(_supabase);
+    _dynamicProxy = new Proxy(_supabase, {
+      get(_, prop) {
+        const target = Sandbox.isActive() ? _supabaseProxy : _supabase;
+        const val = target[prop];
+        return typeof val === 'function' ? val.bind(target) : val;
+      }
+    });
   }
-  return Sandbox.isActive() ? _supabaseProxy : _supabase;
+  return _dynamicProxy;
 }
 
 // Proxy: intercepts writes (stores in memory) and patches reads
@@ -172,6 +184,13 @@ function wrapSupabaseForSandbox(sb) {
       if (prop === 'rpc') {
         return (fnName, params) => {
           console.log(`[SANDBOX] rpc ${fnName}:`, params);
+          // Map known RPCs to SandboxStore operations
+          if (fnName === 'delete_sale' && params?.p_sale_id) {
+            SandboxStore.hide('sales', params.p_sale_id);
+          }
+          if (fnName === 'register_sale' && params?.p_variant_id) {
+            // No need to add — the real DB won't have it, and re-reads won't include it
+          }
           return Promise.resolve({ data: null, error: null });
         };
       }
