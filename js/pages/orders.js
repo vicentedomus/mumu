@@ -47,23 +47,31 @@ async function renderOrdersList(container, sb) {
     const itemNames = [...new Set((o.purchase_order_items || []).map(i => i.product_variants?.products?.name).filter(Boolean))];
 
     return `
-      <div class="card order-card" data-id="${o.id}">
-        <div class="flex-between mb-8">
-          <div>
-            <div class="list-item-title">${o.supplier || itemNames.join(', ') || 'Pedido'}</div>
-            <div class="list-item-sub">${new Date(o.created_at).toLocaleDateString('es-CL')}${o.estimated_arrival ? ' · Llega: ' + new Date(o.estimated_arrival).toLocaleDateString('es-CL') : ''}${o.destination_location?.name ? ' · → ' + o.destination_location.name : ''}</div>
-          </div>
-          <span class="badge ${statusClasses[o.status] || ''}">${statusLabels[o.status] || o.status}</span>
+      <div class="swipeable-item" data-order-id="${o.id}" data-order-label="${o.supplier || itemNames.join(', ') || 'Pedido'}" data-order-status="${o.status}">
+        <div class="swipeable-delete" aria-label="Eliminar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          <span>Eliminar</span>
         </div>
-        <div class="text-sm text-secondary mb-8">${itemCount} artículo${itemCount !== 1 ? 's' : ''}: ${itemNames.join(', ') || 'Sin ítems'}</div>
-        <div class="flex-between">
-          <div class="text-sm">
-            ${o.shipping_cost > 0 ? `Envío: $${o.shipping_cost.toLocaleString()} · ` : ''}
-            ${o.taxes > 0 ? `Imp: $${o.taxes.toLocaleString()} · ` : ''}
+        <div class="swipeable-content">
+          <div class="card order-card" data-id="${o.id}">
+            <div class="flex-between mb-8">
+              <div>
+                <div class="list-item-title">${o.supplier || itemNames.join(', ') || 'Pedido'}</div>
+                <div class="list-item-sub">${new Date(o.created_at).toLocaleDateString('es-CL')}${o.estimated_arrival ? ' · Llega: ' + new Date(o.estimated_arrival).toLocaleDateString('es-CL') : ''}${o.destination_location?.name ? ' · → ' + o.destination_location.name : ''}</div>
+              </div>
+              <span class="badge ${statusClasses[o.status] || ''}">${statusLabels[o.status] || o.status}</span>
+            </div>
+            <div class="text-sm text-secondary mb-8">${itemCount} artículo${itemCount !== 1 ? 's' : ''}: ${itemNames.join(', ') || 'Sin ítems'}</div>
+            <div class="flex-between">
+              <div class="text-sm">
+                ${o.shipping_cost > 0 ? `Envío: $${o.shipping_cost.toLocaleString()} · ` : ''}
+                ${o.taxes > 0 ? `Imp: $${o.taxes.toLocaleString()} · ` : ''}
+              </div>
+              <strong>$${(o.total || 0).toLocaleString()}</strong>
+            </div>
+            ${o.notes ? `<div class="text-sm text-muted mt-8">${o.notes}</div>` : ''}
           </div>
-          <strong>$${(o.total || 0).toLocaleString()}</strong>
         </div>
-        ${o.notes ? `<div class="text-sm text-muted mt-8">${o.notes}</div>` : ''}
       </div>
     `;
   }).join('');
@@ -71,9 +79,34 @@ async function renderOrdersList(container, sb) {
   // Click en pedido → detalle con acciones de estado
   document.querySelectorAll('.order-card').forEach(card => {
     card.addEventListener('click', () => {
+      const item = card.closest('.swipeable-item');
+      if (item && item.classList.contains('swiped')) return;
       const order = orders.find(o => o.id === card.dataset.id);
       if (order) openOrderDetail(order, container, sb);
     });
+  });
+
+  // Swipe-to-delete para pedidos
+  initSwipeToDelete(container, async (item) => {
+    const orderId = item.dataset.orderId;
+    const label = item.dataset.orderLabel;
+    const status = item.dataset.orderStatus;
+
+    let msg = `¿Eliminar pedido "${label}"?`;
+    if (status === 'received') {
+      msg += ' El stock que se ingresó al recibir este pedido NO se revertirá.';
+    }
+
+    const ok = await UI.confirm(msg);
+    if (!ok) return false;
+
+    // Eliminar ítems primero, luego el pedido
+    await sb.from('purchase_order_items').delete().eq('order_id', orderId);
+    const { error } = await sb.from('purchase_orders').delete().eq('id', orderId);
+    if (error) { UI.toast('Error: ' + error.message, 'error'); return false; }
+
+    UI.toast('Pedido eliminado');
+    return true;
   });
 }
 

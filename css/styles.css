@@ -1293,6 +1293,152 @@ body.sandbox-mode #page-content { margin-top: 0; }
   text-align: right;
 }
 
+/* ========== Swipe-to-Delete ========== */
+.swipeable-item {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+}
+
+.swipeable-delete {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 80px;
+  background: var(--danger);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: white;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  border-radius: 0 var(--r-lg) var(--r-lg) 0;
+}
+.swipeable-delete svg {
+  width: 20px;
+  height: 20px;
+  stroke: white;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.swipeable-delete span {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.swipeable-delete:active {
+  background: #a3423c;
+}
+
+.swipeable-content {
+  position: relative;
+  z-index: 1;
+  background: var(--surface-lowest);
+  will-change: transform;
+  transition: transform 0.3s cubic-bezier(.4,0,.2,1);
+}
+
+/* Dentro de cards: el contenido swipeable hereda fondo */
+.swipeable-item .card {
+  margin-bottom: 0;
+}
+
+/* Swipeable items que son hijos de un card (ventas) */
+.card > .swipeable-item {
+  border-radius: 0;
+  margin: 0 -20px;
+}
+.card > .swipeable-item .swipeable-delete {
+  border-radius: 0;
+}
+.card > .swipeable-item + .swipeable-item {
+  border-top: 1px solid rgba(194, 199, 209, 0.10);
+}
+.card > .swipeable-item .list-item {
+  padding: 14px 20px;
+}
+
+/* Swipeable items standalone (inventario, pedidos) */
+#page-content > .swipeable-item,
+#product-list > .swipeable-item {
+  margin-bottom: 16px;
+}
+
+/* ========== Toggle Switch ========== */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface-high);
+  border-radius: var(--r-sm);
+  box-shadow: var(--clay-inner);
+}
+.toggle-label { flex: 1; }
+.toggle-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+.toggle-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.toggle-switch {
+  width: 48px;
+  height: 28px;
+  border-radius: 14px;
+  border: none;
+  background: var(--surface-dim);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.25s var(--ease);
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: var(--clay-inner);
+}
+.toggle-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  transition: transform 0.25s var(--ease-spring);
+}
+.toggle-switch.toggle-active {
+  background: var(--blue);
+}
+.toggle-switch.toggle-active .toggle-knob {
+  transform: translateX(20px);
+}
+
+/* ========== Cart Line (ventas multi-producto) ========== */
+.cart-line-remove {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  color: var(--danger);
+  cursor: pointer;
+  padding: 0 4px;
+  min-width: 32px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -1349,6 +1495,7 @@ body.sandbox-mode #page-content { margin-top: 0; }
     gap: 16px;
   }
   #product-list .card { margin-bottom: 0; }
+  #product-list .swipeable-item { margin-bottom: 0; }
 
   /* Wider variant table cells */
   .variants-table td,

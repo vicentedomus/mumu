@@ -1,4 +1,4 @@
-// Ventas — listado con filtros + registro de venta
+// Ventas — listado con filtros + registro de venta multi-producto
 Router.register('#/sales', async (container) => {
   document.getElementById('page-title').textContent = 'Ventas';
 
@@ -94,23 +94,26 @@ async function renderSalesList(container, sb, locations, filters) {
             <p class="text-sm">Sin ventas en este período</p>
           </div>`
         : sales.map(s => `
-          <div class="list-item">
-            <div class="movement-icon movement-icon-venta">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          <div class="swipeable-item" data-sale-id="${s.id}">
+            <div class="swipeable-delete" aria-label="Eliminar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              <span>Eliminar</span>
             </div>
-            <div class="list-item-content">
-              <div class="list-item-title">${s.product_variants?.products?.name || 'Producto'}</div>
-              <div class="list-item-sub">${s.product_variants?.color || ''} ${s.product_variants?.size || ''} · x${s.quantity} · ${s.locations?.name || ''}</div>
-            </div>
-            <div class="list-item-right" style="display:flex;align-items:center;gap:8px">
-              <div style="text-align:right">
-                <strong>$${(s.unit_price * s.quantity).toLocaleString()}</strong>
-                ${s.commission_amount > 0 ? `<div class="text-sm text-muted">-$${s.commission_amount.toLocaleString()}</div>` : ''}
-                <div class="text-sm text-muted">${new Date(s.created_at).toLocaleDateString('es-CL')}</div>
+            <div class="swipeable-content">
+              <div class="list-item">
+                <div class="movement-icon movement-icon-venta">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                </div>
+                <div class="list-item-content">
+                  <div class="list-item-title">${s.product_variants?.products?.name || 'Producto'}</div>
+                  <div class="list-item-sub">${s.product_variants?.color || ''} ${s.product_variants?.size || ''} · x${s.quantity} · ${s.locations?.name || ''}</div>
+                </div>
+                <div class="list-item-right">
+                  <strong>$${(s.unit_price * s.quantity).toLocaleString()}</strong>
+                  ${s.commission_amount > 0 ? `<div class="text-sm text-muted">-$${s.commission_amount.toLocaleString()}</div>` : ''}
+                  <div class="text-sm text-muted">${new Date(s.created_at).toLocaleDateString('es-CL')}</div>
+                </div>
               </div>
-              <button class="btn-icon delete-sale-btn" data-sale-id="${s.id}" title="Eliminar venta" style="flex-shrink:0;color:var(--danger)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:18px;height:18px"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-              </button>
             </div>
           </div>
         `).join('')
@@ -132,27 +135,25 @@ async function renderSalesList(container, sb, locations, filters) {
   document.getElementById('filter-from').addEventListener('change', applyFilters);
   document.getElementById('filter-to').addEventListener('change', applyFilters);
 
-  // Eliminar venta
-  document.querySelectorAll('.delete-sale-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const saleId = btn.dataset.saleId;
-      const sale = sales.find(s => s.id === saleId);
-      const label = `${sale?.product_variants?.products?.name || 'Producto'} (x${sale?.quantity})`;
-      const ok = await UI.confirm(`¿Eliminar venta de ${label}? Se devolverá el stock.`);
-      if (!ok) return;
+  // Swipe-to-delete para ventas
+  initSwipeToDelete(container, async (item) => {
+    const saleId = item.dataset.saleId;
+    const sale = sales.find(s => s.id === saleId);
+    const label = `${sale?.product_variants?.products?.name || 'Producto'} (x${sale?.quantity})`;
+    const ok = await UI.confirm(`¿Eliminar venta de ${label}? Se devolverá el stock.`);
+    if (!ok) return false;
 
-      const { error } = await sb.rpc('delete_sale', { p_sale_id: saleId });
-      if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
+    const { error } = await sb.rpc('delete_sale', { p_sale_id: saleId });
+    if (error) { UI.toast('Error: ' + error.message, 'error'); return false; }
 
-      UI.toast('Venta eliminada — stock devuelto');
-      await renderSalesList(container, sb, locations, filters);
-    });
+    UI.toast('Venta eliminada — stock devuelto');
+    await renderSalesList(container, sb, locations, filters);
+    return true;
   });
 }
 
 // ============================================
-// Nueva venta (independiente del inventario)
+// Nueva venta multi-producto
 // ============================================
 async function openNewSaleForm(locations, container, sb) {
   // Cargar productos con variantes que tengan stock
@@ -165,31 +166,29 @@ async function openNewSaleForm(locations, container, sb) {
   const html = `
     <form id="new-sale-form">
       <div class="form-group">
-        <label>Ubicación de venta</label>
+        <label>Punto de venta</label>
         <select id="ns-location" required>
           ${locations.map(l => `<option value="${l.id}" data-rate="${l.commission_rate}">${l.name}${l.commission_rate > 0 ? ` (${l.commission_rate}%)` : ''}</option>`).join('')}
         </select>
       </div>
-      <div class="form-group">
-        <label>Producto</label>
-        <select id="ns-product" required>
-          <option value="">Seleccionar...</option>
-          ${(products || []).map(p => `<option value="${p.id}" data-price="${p.sale_price}">${p.name} — $${p.sale_price}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Variante</label>
-        <select id="ns-variant" required disabled>
-          <option value="">Primero selecciona producto</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Cantidad</label>
-        <input type="number" id="ns-quantity" min="1" value="1" required>
+
+      <div class="toggle-row mb-16" id="ns-personal-toggle">
+        <div class="toggle-label">
+          <div class="toggle-title">Venta personal</div>
+          <div class="toggle-hint">Sin comisión aunque el PV normalmente cobre</div>
+        </div>
+        <button type="button" class="toggle-switch" id="ns-skip-commission" role="switch" aria-checked="false">
+          <span class="toggle-knob"></span>
+        </button>
       </div>
 
-      <div class="card sale-preview mt-8 mb-16" id="ns-preview" style="cursor:default">
-        <p class="text-sm text-muted">Selecciona un producto</p>
+      <div class="section-divider mb-16"><span class="section-label">Productos</span></div>
+
+      <div id="sale-cart-items"></div>
+      <button type="button" class="btn btn-outline btn-sm mt-8 btn-full" id="add-cart-item">+ Agregar producto</button>
+
+      <div class="card sale-preview mt-16 mb-16" id="ns-preview" style="cursor:default">
+        <p class="text-sm text-muted">Agrega productos a la venta</p>
       </div>
 
       <button type="submit" class="btn btn-primary btn-full" id="ns-submit" disabled>Registrar venta</button>
@@ -198,105 +197,234 @@ async function openNewSaleForm(locations, container, sb) {
 
   UI.openSheet('Nueva venta', html);
 
-  // Producto → cargar variantes
-  document.getElementById('ns-product').addEventListener('change', (e) => {
-    const productId = e.target.value;
-    const variantSelect = document.getElementById('ns-variant');
+  let cartIndex = 0;
+  let skipCommission = false;
+
+  // Toggle venta personal
+  const toggleBtn = document.getElementById('ns-skip-commission');
+  toggleBtn.addEventListener('click', () => {
+    skipCommission = !skipCommission;
+    toggleBtn.setAttribute('aria-checked', skipCommission);
+    toggleBtn.classList.toggle('toggle-active', skipCommission);
+    updateCartPreview(products, locations, skipCommission);
+  });
+
+  // Agregar primera línea
+  addCartLine();
+
+  document.getElementById('add-cart-item').addEventListener('click', () => addCartLine());
+
+  function addCartLine() {
+    const idx = cartIndex++;
     const locationId = document.getElementById('ns-location').value;
 
-    if (!productId) {
-      variantSelect.innerHTML = '<option value="">Primero selecciona producto</option>';
-      variantSelect.disabled = true;
-      document.getElementById('ns-submit').disabled = true;
-      return;
+    document.getElementById('sale-cart-items').insertAdjacentHTML('beforeend', `
+      <div class="card cart-line" data-idx="${idx}" style="cursor:default;padding:14px;margin-bottom:10px">
+        <div class="flex-between mb-8">
+          <span class="text-sm text-muted">Producto ${idx + 1}</span>
+          <button type="button" class="cart-line-remove" data-idx="${idx}">&times;</button>
+        </div>
+        <div class="form-group" style="margin-bottom:10px">
+          <select class="cl-product" data-idx="${idx}">
+            <option value="">Seleccionar producto...</option>
+            ${(products || []).map(p => `<option value="${p.id}" data-price="${p.sale_price}">${p.name} — $${p.sale_price}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:2;margin-bottom:0">
+            <select class="cl-variant" data-idx="${idx}" disabled>
+              <option value="">Primero selecciona producto</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <input type="number" class="cl-qty" data-idx="${idx}" min="1" value="1" placeholder="Cant.">
+          </div>
+        </div>
+        <div class="cl-line-info text-sm mt-8" data-idx="${idx}"></div>
+      </div>
+    `);
+  }
+
+  // Delegated events para el carrito
+  const cartContainer = document.getElementById('sale-cart-items');
+
+  cartContainer.addEventListener('change', (e) => {
+    if (e.target.classList.contains('cl-product')) {
+      const idx = e.target.dataset.idx;
+      const productId = e.target.value;
+      const variantSelect = document.querySelector(`.cl-variant[data-idx="${idx}"]`);
+      const locationId = document.getElementById('ns-location').value;
+
+      if (!productId) {
+        variantSelect.innerHTML = '<option value="">Primero selecciona producto</option>';
+        variantSelect.disabled = true;
+        updateCartPreview(products, locations, skipCommission);
+        return;
+      }
+
+      const product = products.find(p => p.id === productId);
+      const variants = (product?.product_variants || []).filter(v => {
+        const inv = (v.inventory || []).find(i => i.location_id === locationId);
+        return inv && inv.quantity > 0;
+      });
+
+      if (variants.length === 0) {
+        variantSelect.innerHTML = '<option value="">Sin stock en esta ubicación</option>';
+        variantSelect.disabled = true;
+      } else {
+        variantSelect.innerHTML = variants.map(v => {
+          const stock = (v.inventory || []).find(i => i.location_id === locationId)?.quantity || 0;
+          return `<option value="${v.id}" data-stock="${stock}">${v.color} · ${v.size} (${stock} disp.)</option>`;
+        }).join('');
+        variantSelect.disabled = false;
+      }
+      updateCartPreview(products, locations, skipCommission);
     }
 
-    const product = products.find(p => p.id === productId);
-    const variants = (product?.product_variants || []).filter(v => {
-      // Mostrar solo variantes con stock en la ubicación seleccionada
-      const inv = (v.inventory || []).find(i => i.location_id === locationId);
-      return inv && inv.quantity > 0;
-    });
-
-    if (variants.length === 0) {
-      variantSelect.innerHTML = '<option value="">Sin stock en esta ubicación</option>';
-      variantSelect.disabled = true;
-      document.getElementById('ns-submit').disabled = true;
-    } else {
-      variantSelect.innerHTML = variants.map(v => {
-        const stock = (v.inventory || []).find(i => i.location_id === locationId)?.quantity || 0;
-        return `<option value="${v.id}" data-stock="${stock}">${v.color} · ${v.size} (${stock} disponibles)</option>`;
-      }).join('');
-      variantSelect.disabled = false;
-      document.getElementById('ns-submit').disabled = false;
+    if (e.target.classList.contains('cl-variant')) {
+      updateCartPreview(products, locations, skipCommission);
     }
-    updateNewSalePreview(products, locations);
   });
 
-  // Actualizar variantes al cambiar ubicación
+  cartContainer.addEventListener('input', (e) => {
+    if (e.target.classList.contains('cl-qty')) {
+      updateCartPreview(products, locations, skipCommission);
+    }
+  });
+
+  cartContainer.addEventListener('click', (e) => {
+    if (e.target.classList.contains('cart-line-remove')) {
+      const row = e.target.closest('.cart-line');
+      if (document.querySelectorAll('.cart-line').length > 1) {
+        row.remove();
+        updateCartPreview(products, locations, skipCommission);
+      }
+    }
+  });
+
+  // Al cambiar ubicación, refrescar todas las variantes
   document.getElementById('ns-location').addEventListener('change', () => {
-    const prodSelect = document.getElementById('ns-product');
-    if (prodSelect.value) prodSelect.dispatchEvent(new Event('change'));
-    updateNewSalePreview(products, locations);
+    document.querySelectorAll('.cl-product').forEach(sel => {
+      if (sel.value) sel.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    updateCartPreview(products, locations, skipCommission);
   });
 
-  document.getElementById('ns-quantity').addEventListener('input', () => updateNewSalePreview(products, locations));
-  document.getElementById('ns-variant').addEventListener('change', () => updateNewSalePreview(products, locations));
-
-  // Submit
+  // Submit — registrar todas las líneas
   document.getElementById('new-sale-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = document.getElementById('ns-submit');
     await UI.withLoading(btn, async () => {
-      const variantId = document.getElementById('ns-variant').value;
       const locationId = document.getElementById('ns-location').value;
-      const quantity = parseInt(document.getElementById('ns-quantity').value);
+      const lines = collectCartLines();
 
-      if (!variantId) { UI.toast('Selecciona una variante', 'error'); return; }
-
-      const { error } = await sb.rpc('register_sale', {
-        p_variant_id: variantId, p_location_id: locationId, p_quantity: quantity
-      });
-
-      if (error) {
-        UI.toast(error.message.includes('insuficiente') ? 'Stock insuficiente' : 'Error: ' + error.message, 'error');
+      if (lines.length === 0) {
+        UI.toast('Agrega al menos un producto', 'error');
         return;
       }
 
-      UI.closeSheet();
-      UI.toast('Venta registrada');
-      location.hash = '#/sales';
-      Router.navigate('#/sales');
+      // Registrar cada línea
+      let allOk = true;
+      for (const line of lines) {
+        const { error } = await sb.rpc('register_sale', {
+          p_variant_id: line.variantId,
+          p_location_id: locationId,
+          p_quantity: line.quantity,
+          p_skip_commission: skipCommission
+        });
+        if (error) {
+          const product = products.find(p => p.product_variants?.some(v => v.id === line.variantId));
+          UI.toast(`Error en ${product?.name || 'producto'}: ${error.message}`, 'error');
+          allOk = false;
+          break;
+        }
+      }
+
+      if (allOk) {
+        UI.closeSheet();
+        UI.toast(`${lines.length} venta${lines.length > 1 ? 's' : ''} registrada${lines.length > 1 ? 's' : ''}`);
+        location.hash = '#/sales';
+        Router.navigate('#/sales');
+      }
     });
   });
 }
 
-function updateNewSalePreview(products, locations) {
+function collectCartLines() {
+  const lines = [];
+  document.querySelectorAll('.cart-line').forEach(row => {
+    const variantId = row.querySelector('.cl-variant')?.value;
+    const qty = parseInt(row.querySelector('.cl-qty')?.value) || 0;
+    if (variantId && qty > 0) {
+      lines.push({ variantId, quantity: qty });
+    }
+  });
+  return lines;
+}
+
+function updateCartPreview(products, locations, skipCommission) {
   const preview = document.getElementById('ns-preview');
+  const submitBtn = document.getElementById('ns-submit');
   if (!preview) return;
 
-  const productId = document.getElementById('ns-product').value;
-  const locationId = document.getElementById('ns-location').value;
-  const qty = parseInt(document.getElementById('ns-quantity').value) || 1;
+  const locationId = document.getElementById('ns-location')?.value;
+  const loc = locations.find(l => l.id === locationId);
+  const lines = collectCartLines();
 
-  if (!productId) {
-    preview.innerHTML = '<p class="text-sm text-muted">Selecciona un producto</p>';
+  if (lines.length === 0) {
+    preview.innerHTML = '<p class="text-sm text-muted">Agrega productos a la venta</p>';
+    if (submitBtn) submitBtn.disabled = true;
     return;
   }
 
-  const product = products.find(p => p.id === productId);
-  const loc = locations.find(l => l.id === locationId);
-  const subtotal = product.sale_price * qty;
-  const commission = subtotal * ((loc?.commission_rate || 0) / 100);
+  let subtotal = 0;
+  const lineDetails = [];
+
+  for (const line of lines) {
+    let price = 0;
+    let name = '';
+    for (const p of (products || [])) {
+      const v = (p.product_variants || []).find(v => v.id === line.variantId);
+      if (v) { price = p.sale_price; name = p.name; break; }
+    }
+    const lineTotal = price * line.quantity;
+    subtotal += lineTotal;
+    lineDetails.push({ name, qty: line.quantity, price, lineTotal });
+  }
+
+  const commissionRate = skipCommission ? 0 : (loc?.commission_rate || 0);
+  const commission = subtotal * (commissionRate / 100);
   const net = subtotal - commission;
 
   preview.innerHTML = `
-    <div class="flex-between"><span>Precio unitario</span><strong>$${product.sale_price}</strong></div>
-    <div class="flex-between"><span>Cantidad</span><span>x${qty}</span></div>
-    <div class="flex-between"><span>Subtotal</span><strong>$${subtotal.toLocaleString()}</strong></div>
+    ${lineDetails.map(l => `
+      <div class="flex-between text-sm"><span>${l.name} x${l.qty}</span><span>$${l.lineTotal.toLocaleString()}</span></div>
+    `).join('')}
+    <div class="flex-between mt-8" style="border-top:1px solid rgba(194,199,209,0.1);padding-top:8px">
+      <span>Subtotal</span><strong>$${subtotal.toLocaleString()}</strong>
+    </div>
     ${commission > 0 ? `<div class="flex-between text-muted"><span>Comisión ${loc.commission_rate}%</span><span>-$${commission.toLocaleString()}</span></div>` : ''}
+    ${skipCommission && (loc?.commission_rate || 0) > 0 ? `<div class="flex-between text-sm" style="color:var(--sage-dark)"><span>Comisión omitida (${loc.commission_rate}%)</span><span>$0</span></div>` : ''}
     <div class="flex-between mt-8" style="border-top:1px solid rgba(194,199,209,0.1);padding-top:8px">
       <strong>Neto</strong><strong class="text-accent">$${net.toLocaleString()}</strong>
     </div>
   `;
+
+  if (submitBtn) submitBtn.disabled = false;
+
+  // Actualizar info de cada línea
+  document.querySelectorAll('.cl-line-info').forEach(el => {
+    const idx = el.dataset.idx;
+    const row = el.closest('.cart-line');
+    const variantSel = row.querySelector('.cl-variant');
+    const stockOpt = variantSel?.selectedOptions[0];
+    const stock = stockOpt?.dataset.stock;
+    const qty = parseInt(row.querySelector('.cl-qty')?.value) || 0;
+
+    if (stock && qty > parseInt(stock)) {
+      el.innerHTML = `<span class="text-danger">Solo hay ${stock} disponibles</span>`;
+    } else {
+      el.innerHTML = '';
+    }
+  });
 }

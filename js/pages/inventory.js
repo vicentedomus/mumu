@@ -46,7 +46,17 @@ async function renderProductList(container, sb) {
       <input type="search" id="search-products" placeholder="Buscar producto...">
     </div>
     <div id="product-list">
-      ${products.map(p => renderProductCard(p)).join('')}
+      ${products.map(p => `
+        <div class="swipeable-item" data-product-id="${p.id}" data-product-name="${p.name}" data-name="${p.name.toLowerCase()}">
+          <div class="swipeable-delete" aria-label="Eliminar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            <span>Eliminar</span>
+          </div>
+          <div class="swipeable-content">
+            ${renderProductCard(p)}
+          </div>
+        </div>
+      `).join('')}
     </div>
   `;
 
@@ -56,17 +66,45 @@ async function renderProductList(container, sb) {
   // Búsqueda
   document.getElementById('search-products').addEventListener('input', (e) => {
     const q = e.target.value.toLowerCase();
-    document.querySelectorAll('.product-card').forEach(card => {
-      card.style.display = card.dataset.name.includes(q) ? '' : 'none';
+    document.querySelectorAll('.swipeable-item[data-product-id]').forEach(item => {
+      item.style.display = item.dataset.name.includes(q) ? '' : 'none';
     });
   });
 
   // Click en producto → detalle
   document.querySelectorAll('.product-card').forEach(card => {
     card.addEventListener('click', () => {
+      const item = card.closest('.swipeable-item');
+      if (item && item.classList.contains('swiped')) return; // no abrir si está en swipe
       const product = products.find(p => p.id === card.dataset.id);
       if (product) openProductDetail(product, container, sb);
     });
+  });
+
+  // Swipe-to-delete para productos
+  initSwipeToDelete(container, async (item) => {
+    const productId = item.dataset.productId;
+    const productName = item.dataset.productName;
+    const product = products.find(p => p.id === productId);
+    const variantCount = (product?.product_variants || []).length;
+    const totalStock = (product?.product_variants || []).reduce((sum, v) =>
+      (v.inventory || []).reduce((s, i) => s + i.quantity, sum), 0);
+
+    let msg = `¿Eliminar "${productName}" con todas sus ${variantCount} variante${variantCount !== 1 ? 's' : ''}?`;
+    if (totalStock > 0) {
+      msg += ` Tiene ${totalStock} unidad${totalStock !== 1 ? 'es' : ''} en stock que se perderán del inventario.`;
+    }
+    msg += ' Esta acción no se puede deshacer.';
+
+    const ok = await UI.confirm(msg);
+    if (!ok) return false;
+
+    // Soft-delete: marcar producto como inactivo
+    const { error } = await sb.from('products').update({ active: false }).eq('id', productId);
+    if (error) { UI.toast('Error: ' + error.message, 'error'); return false; }
+
+    UI.toast(`"${productName}" eliminado`);
+    return true;
   });
 
 }
