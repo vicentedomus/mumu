@@ -135,6 +135,16 @@ async function renderSalesList(container, sb, locations, filters) {
   document.getElementById('filter-from').addEventListener('change', applyFilters);
   document.getElementById('filter-to').addEventListener('change', applyFilters);
 
+  // Click para abrir detalle de venta
+  container.querySelectorAll('.swipeable-content').forEach(el => {
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => {
+      const saleId = el.closest('.swipeable-item')?.dataset.saleId;
+      const sale = sales.find(s => s.id === saleId);
+      if (sale) openSaleDetail(sale);
+    });
+  });
+
   // Swipe-to-delete para ventas
   initSwipeToDelete(container, async (item) => {
     const saleId = item.dataset.saleId;
@@ -427,4 +437,72 @@ function updateCartPreview(products, locations, skipCommission) {
       el.innerHTML = '';
     }
   });
+}
+
+// ============================================
+// Detalle de venta
+// ============================================
+function openSaleDetail(sale) {
+  const productName = sale.product_variants?.products?.name || 'Producto';
+  const variant = sale.product_variants;
+  const variantLabel = [variant?.color, variant?.size].filter(Boolean).join(' · ');
+  const sku = variant?.sku || '—';
+  const location = sale.locations?.name || '—';
+  const date = new Date(sale.created_at);
+  const dateStr = date.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+  const timeStr = date.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+  const subtotal = sale.unit_price * sale.quantity;
+  const commission = sale.commission_amount || 0;
+  const net = subtotal - commission;
+
+  const html = `
+    <div class="sale-detail">
+      <div class="flex-between mb-8">
+        <span class="text-muted">Producto</span>
+        <strong>${productName}</strong>
+      </div>
+      <div class="flex-between mb-8">
+        <span class="text-muted">Variante</span>
+        <span>${variantLabel || '—'}</span>
+      </div>
+      <div class="flex-between mb-8">
+        <span class="text-muted">SKU</span>
+        <span class="text-sm">${sku}</span>
+      </div>
+      <div class="flex-between mb-8">
+        <span class="text-muted">Cantidad</span>
+        <span>${sale.quantity}</span>
+      </div>
+      <div class="flex-between mb-8">
+        <span class="text-muted">Precio unitario</span>
+        <span>$${sale.unit_price.toLocaleString()}</span>
+      </div>
+      <div class="flex-between mb-8">
+        <span class="text-muted">Ubicación</span>
+        <span>${location}</span>
+      </div>
+      <div class="flex-between mb-8">
+        <span class="text-muted">Fecha</span>
+        <span>${dateStr}, ${timeStr}</span>
+      </div>
+
+      <div style="border-top:1px solid var(--surface-high);margin:16px 0;padding-top:12px">
+        <div class="flex-between mb-8">
+          <span>Subtotal</span>
+          <strong>$${subtotal.toLocaleString()}</strong>
+        </div>
+        ${commission > 0 ? `
+        <div class="flex-between mb-8 text-muted">
+          <span>Comisión</span>
+          <span>-$${commission.toLocaleString()}</span>
+        </div>` : ''}
+        <div class="flex-between">
+          <strong>Neto</strong>
+          <strong style="color:var(--sage-dark)">$${net.toLocaleString()}</strong>
+        </div>
+      </div>
+    </div>
+  `;
+
+  UI.openSheet('Detalle de venta', html);
 }

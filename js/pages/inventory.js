@@ -376,9 +376,12 @@ async function openProductForm(product, container, sb) {
           return `
             <div class="flex-between mb-8" style="gap:8px">
               <span class="text-sm" style="flex:1;min-width:0"><strong>${v.color}</strong> · ${v.size} <span class="text-muted">(actual: ${currentStock})</span></span>
-              <input type="number" class="stock-edit-input" data-variant-id="${v.id}" data-current="${currentStock}"
-                min="0" value="${currentStock}" placeholder="0"
-                style="width:70px;padding:8px;text-align:center;font-size:0.85rem;border-radius:var(--r-sm);border:none;background:var(--surface-high);box-shadow:var(--clay-inner)">
+              <div class="qty-stepper">
+                <button type="button" class="qty-btn qty-minus" aria-label="Menos">−</button>
+                <input type="number" class="stock-edit-input" data-variant-id="${v.id}" data-current="${currentStock}"
+                  min="0" value="${currentStock}" placeholder="0">
+                <button type="button" class="qty-btn qty-plus" aria-label="Más">+</button>
+              </div>
             </div>
           `;
         }).join('')}
@@ -387,9 +390,12 @@ async function openProductForm(product, container, sb) {
           ${combos.filter(cb => !existingVariants.find(v => v.size === cb.size && v.color === cb.color)).map(v => `
             <div class="flex-between mb-8" style="gap:8px">
               <span class="text-sm" style="flex:1;min-width:0"><strong>${v.color}</strong> · ${v.size} <span class="text-muted">(nueva)</span></span>
-              <input type="number" class="stock-initial-input" data-size="${v.size}" data-color="${v.color}"
-                min="0" value="0" placeholder="0"
-                style="width:70px;padding:8px;text-align:center;font-size:0.85rem;border-radius:var(--r-sm);border:none;background:var(--surface-high);box-shadow:var(--clay-inner)">
+              <div class="qty-stepper">
+                <button type="button" class="qty-btn qty-minus" aria-label="Menos">−</button>
+                <input type="number" class="stock-initial-input" data-size="${v.size}" data-color="${v.color}"
+                  min="0" value="0" placeholder="0">
+                <button type="button" class="qty-btn qty-plus" aria-label="Más">+</button>
+              </div>
             </div>
           `).join('')}
         ` : ''}
@@ -400,15 +406,32 @@ async function openProductForm(product, container, sb) {
         ${combos.map(v => `
           <div class="flex-between mb-8" style="gap:8px">
             <span class="text-sm" style="flex:1;min-width:0"><strong>${v.color}</strong> · ${v.size}</span>
-            <input type="number" class="stock-initial-input" data-size="${v.size}" data-color="${v.color}"
-              min="0" value="0" placeholder="0"
-              style="width:60px;padding:8px;text-align:center;font-size:0.85rem;border-radius:var(--r-sm);border:none;background:var(--surface-high);box-shadow:var(--clay-inner)">
+            <div class="qty-stepper">
+              <button type="button" class="qty-btn qty-minus" aria-label="Menos">−</button>
+              <input type="number" class="stock-initial-input" data-size="${v.size}" data-color="${v.color}"
+                min="0" value="0" placeholder="0">
+              <button type="button" class="qty-btn qty-plus" aria-label="Más">+</button>
+            </div>
           </div>
         `).join('')}
       `;
     }
   }
   updateVariantsPreview();
+
+  // --- Stepper +/- para stock ---
+  document.getElementById('variants-preview').addEventListener('click', (e) => {
+    const btn = e.target.closest('.qty-btn');
+    if (!btn) return;
+    const input = btn.parentElement.querySelector('input[type="number"]');
+    if (!input) return;
+    let val = parseInt(input.value) || 0;
+    if (btn.classList.contains('qty-plus')) {
+      input.value = val + 1;
+    } else if (btn.classList.contains('qty-minus') && val > 0) {
+      input.value = val - 1;
+    }
+  });
 
   // --- Submit ---
   document.getElementById('product-form').addEventListener('submit', async (e) => {

@@ -1503,3 +1503,47 @@ body.sandbox-mode #page-content { margin-top: 0; }
     padding: 10px 10px;
   }
 }
+
+/* ========== Quantity Stepper ========== */
+.qty-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--surface-high);
+  box-shadow: var(--clay-inner);
+}
+.qty-stepper input[type="number"] {
+  width: 48px;
+  padding: 8px 0;
+  text-align: center;
+  font-size: 0.85rem;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  -moz-appearance: textfield;
+}
+.qty-stepper input[type="number"]::-webkit-inner-spin-button,
+.qty-stepper input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.qty-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.qty-btn:active {
+  background: var(--surface-container);
+  color: var(--text-primary);
+}
