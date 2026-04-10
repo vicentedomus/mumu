@@ -29,6 +29,8 @@ async function renderProductList(container, sb) {
     return;
   }
 
+  const { data: locations } = await sb.from('locations').select('id, name').eq('active', true);
+
   if (!products || products.length === 0) {
     container.innerHTML = `
       <div class="empty-state">
@@ -43,11 +45,24 @@ async function renderProductList(container, sb) {
 
   container.innerHTML = `
     <div class="form-group mb-16">
+      <select id="filter-location">
+        <option value="">Todas las ubicaciones</option>
+        ${(locations || []).map(l => `<option value="${l.id}">${l.name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group mb-16">
       <input type="search" id="search-products" placeholder="Buscar producto...">
     </div>
     <div id="product-list">
-      ${products.map(p => `
-        <div class="swipeable-item" data-product-id="${p.id}" data-product-name="${p.name}" data-name="${p.name.toLowerCase()}">
+      ${products.map(p => {
+        const stockByLocId = {};
+        (p.product_variants || []).forEach(v => {
+          (v.inventory || []).forEach(inv => {
+            stockByLocId[inv.location_id] = (stockByLocId[inv.location_id] || 0) + inv.quantity;
+          });
+        });
+        return `
+        <div class="swipeable-item" data-product-id="${p.id}" data-product-name="${p.name}" data-name="${p.name.toLowerCase()}" data-stock-by-locid='${JSON.stringify(stockByLocId)}'>
           <div class="swipeable-delete" aria-label="Eliminar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             <span>Eliminar</span>
@@ -56,20 +71,29 @@ async function renderProductList(container, sb) {
             ${renderProductCard(p)}
           </div>
         </div>
-      `).join('')}
+      `; }).join('')}
     </div>
   `;
 
   // FAB para agregar producto
   addFAB(() => openProductForm(null, container, sb));
 
-  // Búsqueda
-  document.getElementById('search-products').addEventListener('input', (e) => {
-    const q = e.target.value.toLowerCase();
+  // Helper: aplicar filtros de búsqueda + ubicación
+  function applyProductFilters() {
+    const q = document.getElementById('search-products').value.toLowerCase();
+    const locId = document.getElementById('filter-location').value;
     document.querySelectorAll('.swipeable-item[data-product-id]').forEach(item => {
-      item.style.display = item.dataset.name.includes(q) ? '' : 'none';
+      const matchesSearch = !q || item.dataset.name.includes(q);
+      const matchesLoc = !locId || (JSON.parse(item.dataset.stockByLocid || '{}')[locId] || 0) > 0;
+      item.style.display = matchesSearch && matchesLoc ? '' : 'none';
     });
-  });
+  }
+
+  // Búsqueda
+  document.getElementById('search-products').addEventListener('input', applyProductFilters);
+
+  // Filtro por ubicación
+  document.getElementById('filter-location').addEventListener('change', applyProductFilters);
 
   // Click en producto → detalle
   document.querySelectorAll('.product-card').forEach(card => {

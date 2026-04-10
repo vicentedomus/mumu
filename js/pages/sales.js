@@ -237,7 +237,7 @@ async function openNewSaleForm(locations, container, sb) {
         <div class="form-group" style="margin-bottom:10px">
           <select class="cl-product" data-idx="${idx}">
             <option value="">Seleccionar producto...</option>
-            ${(products || []).map(p => `<option value="${p.id}" data-price="${p.sale_price}">${p.name} — $${p.sale_price}</option>`).join('')}
+            ${(products || []).filter(p => (p.product_variants || []).some(v => (v.inventory || []).some(i => i.location_id === locationId && i.quantity > 0))).map(p => `<option value="${p.id}" data-price="${p.sale_price}">${p.name} — $${p.sale_price}</option>`).join('')}
           </select>
         </div>
         <div class="form-row">
@@ -312,10 +312,31 @@ async function openNewSaleForm(locations, container, sb) {
     }
   });
 
-  // Al cambiar ubicación, refrescar todas las variantes
+  // Al cambiar ubicación, refrescar productos y variantes disponibles
   document.getElementById('ns-location').addEventListener('change', () => {
+    const locationId = document.getElementById('ns-location').value;
+    const availableProducts = (products || []).filter(p =>
+      (p.product_variants || []).some(v =>
+        (v.inventory || []).some(i => i.location_id === locationId && i.quantity > 0)
+      )
+    );
+    const productOptions = '<option value="">Seleccionar producto...</option>' +
+      availableProducts.map(p => `<option value="${p.id}" data-price="${p.sale_price}">${p.name} — $${p.sale_price}</option>`).join('');
+
     document.querySelectorAll('.cl-product').forEach(sel => {
-      if (sel.value) sel.dispatchEvent(new Event('change', { bubbles: true }));
+      const prevValue = sel.value;
+      sel.innerHTML = productOptions;
+      if (prevValue && availableProducts.some(p => p.id === prevValue)) {
+        sel.value = prevValue;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        const idx = sel.dataset.idx;
+        const variantSelect = document.querySelector(`.cl-variant[data-idx="${idx}"]`);
+        if (variantSelect) {
+          variantSelect.innerHTML = '<option value="">Primero selecciona producto</option>';
+          variantSelect.disabled = true;
+        }
+      }
     });
     updateCartPreview(products, locations, skipCommission);
   });
