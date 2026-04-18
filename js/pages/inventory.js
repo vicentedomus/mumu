@@ -1207,6 +1207,14 @@ function openQuickSaleForm(variantId, locations, product, variants, container, s
         return;
       }
 
+      // Guardar unit_cost en la venta recién creada
+      if (product?.cost) {
+        const { data: recentSale } = await sb.from('sales')
+          .select('id').eq('variant_id', variantId).eq('location_id', locationId)
+          .order('created_at', { ascending: false }).limit(1).single();
+        if (recentSale) await sb.from('sales').update({ unit_cost: product.cost }).eq('id', recentSale.id);
+      }
+
       UI.closeSheet();
       UI.toast('Venta registrada');
       await renderProductList(container, sb);

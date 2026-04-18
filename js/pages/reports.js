@@ -23,9 +23,9 @@ async function renderReports(container, sb, period) {
     { data: inventory },
     { data: locations }
   ] = await Promise.all([
-    sb.from('sales').select('id, unit_price, quantity, commission_amount, created_at, variant_id, location_id, product_variants(color, size, product_id, products(name, cost)), locations(name, type, commission_rate)')
+    sb.from('sales').select('id, unit_price, unit_cost, quantity, commission_amount, created_at, variant_id, location_id, product_variants(color, size, product_id, products(name, cost)), locations(name, type, commission_rate)')
       .gte('created_at', start.toISOString()).lte('created_at', end.toISOString()),
-    sb.from('sales').select('id, unit_price, quantity, commission_amount, created_at, product_variants(products(name, cost)), locations(name)')
+    sb.from('sales').select('id, unit_price, unit_cost, quantity, commission_amount, created_at, product_variants(products(name, cost)), locations(name)')
       .gte('created_at', prevStart.toISOString()).lte('created_at', prevEnd.toISOString()),
     sb.from('purchase_orders').select('id, total, shipping_cost, taxes, status, created_at')
       .gte('created_at', start.toISOString()).lte('created_at', end.toISOString()),
@@ -43,7 +43,7 @@ async function renderReports(container, sb, period) {
   // ===== Cálculos período actual =====
   const revenue = sc.reduce((s, x) => s + x.unit_price * x.quantity, 0);
   const commissions = sc.reduce((s, x) => s + (x.commission_amount || 0), 0);
-  const costOfGoods = sc.reduce((s, x) => s + (x.product_variants?.products?.cost || 0) * x.quantity, 0);
+  const costOfGoods = sc.reduce((s, x) => s + (x.unit_cost || x.product_variants?.products?.cost || 0) * x.quantity, 0);
   const netProfit = revenue - commissions - costOfGoods;
   const investment = oc.reduce((s, x) => s + (x.total || 0), 0);
   const investShipping = oc.reduce((s, x) => s + (x.shipping_cost || 0), 0);
@@ -53,7 +53,7 @@ async function renderReports(container, sb, period) {
   // ===== Cálculos período anterior =====
   const prevRevenue = sp.reduce((s, x) => s + x.unit_price * x.quantity, 0);
   const prevCommissions = sp.reduce((s, x) => s + (x.commission_amount || 0), 0);
-  const prevCostOfGoods = sp.reduce((s, x) => s + (x.product_variants?.products?.cost || 0) * x.quantity, 0);
+  const prevCostOfGoods = sp.reduce((s, x) => s + (x.unit_cost || x.product_variants?.products?.cost || 0) * x.quantity, 0);
   const prevNetProfit = prevRevenue - prevCommissions - prevCostOfGoods;
   const prevInvestment = op.reduce((s, x) => s + (x.total || 0), 0);
   const prevUnitsSold = sp.reduce((s, x) => s + x.quantity, 0);
@@ -65,7 +65,7 @@ async function renderReports(container, sb, period) {
     if (!productMap[name]) productMap[name] = { qty: 0, revenue: 0, cost: 0, commission: 0 };
     productMap[name].qty += s.quantity;
     productMap[name].revenue += s.unit_price * s.quantity;
-    productMap[name].cost += (s.product_variants?.products?.cost || 0) * s.quantity;
+    productMap[name].cost += (s.unit_cost || s.product_variants?.products?.cost || 0) * s.quantity;
     productMap[name].commission += s.commission_amount || 0;
   });
   const topProducts = Object.entries(productMap)

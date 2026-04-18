@@ -169,7 +169,7 @@ async function openNewSaleForm(locations, container, sb) {
   // Cargar productos con variantes que tengan stock
   const { data: products } = await sb
     .from('products')
-    .select('id, name, sale_price, product_variants(id, size, color, sku, inventory(quantity, location_id))')
+    .select('id, name, cost, sale_price, product_variants(id, size, color, sku, inventory(quantity, location_id))')
     .eq('active', true)
     .eq('product_variants.active', true)
     .order('name');
@@ -369,6 +369,14 @@ async function openNewSaleForm(locations, container, sb) {
           UI.toast(`Error en ${product?.name || 'producto'}: ${error.message}`, 'error');
           allOk = false;
           break;
+        }
+        // Guardar unit_cost en la venta recién creada
+        const product = products.find(p => p.product_variants?.some(v => v.id === line.variantId));
+        if (product?.cost) {
+          const { data: recentSale } = await sb.from('sales')
+            .select('id').eq('variant_id', line.variantId).eq('location_id', locationId)
+            .order('created_at', { ascending: false }).limit(1).single();
+          if (recentSale) await sb.from('sales').update({ unit_cost: product.cost }).eq('id', recentSale.id);
         }
       }
 

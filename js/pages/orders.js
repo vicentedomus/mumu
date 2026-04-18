@@ -699,6 +699,20 @@ async function openNewOrderForm(container, sb) {
         });
       }
 
+      // Actualizar products.cost con el unit_cost del pedido (último costo conocido)
+      if (items.some(i => i.unit_cost > 0)) {
+        const variantIds = items.filter(i => i.unit_cost > 0).map(i => i.variant_id);
+        const { data: variants } = await sb.from('product_variants').select('id, product_id').in('id', variantIds);
+        const seen = new Set();
+        for (const item of items) {
+          if (!item.unit_cost) continue;
+          const variant = (variants || []).find(v => v.id === item.variant_id);
+          if (!variant || seen.has(variant.product_id)) continue;
+          seen.add(variant.product_id);
+          await sb.from('products').update({ cost: item.unit_cost }).eq('id', variant.product_id);
+        }
+      }
+
       UI.closeSheet();
       UI.toast('Pedido creado');
       await renderOrdersList(container, sb);
