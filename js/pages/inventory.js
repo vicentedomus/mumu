@@ -249,6 +249,13 @@ async function openProductForm(product, container, sb) {
       </div>
       <div class="chip-selector" id="size-selector">
         ${ALL_SIZES.map(s => `<button type="button" class="chip ${existingSizes.includes(s) ? 'chip-active' : ''}" data-value="${s}">${s}</button>`).join('')}
+        ${existingSizes.filter(s => !ALL_SIZES.includes(s)).map(s => `<button type="button" class="chip chip-active chip-removable" data-value="${s}">${s} <span class="chip-x">&times;</span></button>`).join('')}
+      </div>
+      <div class="form-row mt-8">
+        <div class="form-group" style="flex:1;margin-bottom:0">
+          <input type="text" id="size-custom-input" placeholder="Otra talla (ej: 24-36)">
+        </div>
+        <button type="button" class="btn btn-sm btn-outline" id="add-size-btn">+</button>
       </div>
 
       <div class="section-divider mt-16 mb-16">
@@ -336,12 +343,33 @@ async function openProductForm(product, container, sb) {
     });
   }
 
-  // --- Tallas: toggle chips ---
+  // --- Tallas: toggle chips + talla personalizada ---
   document.getElementById('size-selector').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
-    chip.classList.toggle('chip-active');
+    if (e.target.classList.contains('chip-x')) {
+      chip.remove();
+    } else {
+      chip.classList.toggle('chip-active');
+    }
     updateVariantsPreview();
+  });
+
+  const addCustomSize = () => {
+    const input = document.getElementById('size-custom-input');
+    const size = input.value.trim();
+    if (!size) return;
+    const existing = document.querySelectorAll('#size-selector .chip');
+    for (const c of existing) { if (c.dataset.value === size) { c.classList.add('chip-active'); input.value = ''; updateVariantsPreview(); return; } }
+    document.getElementById('size-selector').insertAdjacentHTML('beforeend',
+      `<button type="button" class="chip chip-active chip-removable" data-value="${size}">${size} <span class="chip-x">&times;</span></button>`
+    );
+    input.value = '';
+    updateVariantsPreview();
+  };
+  document.getElementById('add-size-btn').addEventListener('click', addCustomSize);
+  document.getElementById('size-custom-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addCustomSize(); }
   });
 
   // --- Colores: agregar/quitar ---

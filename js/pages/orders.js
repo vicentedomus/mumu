@@ -450,6 +450,12 @@ async function openNewOrderForm(container, sb) {
         <div class="chip-selector" id="new-size-chips">
           ${availableSizes.map(s => `<button type="button" class="chip" data-value="${s}">${s}</button>`).join('')}
         </div>
+        <div class="form-row mt-8">
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <input type="text" id="new-size-custom-input" placeholder="Otra talla (ej: 24-36)">
+          </div>
+          <button type="button" class="btn btn-sm btn-outline" id="new-size-custom-btn">+</button>
+        </div>
         <button class="btn btn-primary btn-full mt-16" id="new-size-confirm" disabled>Agregar talla</button>
       `;
       UI.openSheet('Nueva talla', sizeHtml);
@@ -462,6 +468,28 @@ async function openNewOrderForm(container, sb) {
         chip.classList.add('chip-active');
         selectedSize = chip.dataset.value;
         document.getElementById('new-size-confirm').disabled = false;
+      });
+
+      const addNewSizeCustom = () => {
+        const input = document.getElementById('new-size-custom-input');
+        const val = input.value.trim();
+        if (!val) return;
+        document.querySelectorAll('#new-size-chips .chip').forEach(c => c.classList.remove('chip-active'));
+        const existing = document.querySelector(`#new-size-chips .chip[data-value="${val}"]`);
+        if (existing) {
+          existing.classList.add('chip-active');
+        } else {
+          document.getElementById('new-size-chips').insertAdjacentHTML('beforeend',
+            `<button type="button" class="chip chip-active" data-value="${val}">${val}</button>`
+          );
+        }
+        selectedSize = val;
+        document.getElementById('new-size-confirm').disabled = false;
+        input.value = '';
+      };
+      document.getElementById('new-size-custom-btn').addEventListener('click', addNewSizeCustom);
+      document.getElementById('new-size-custom-input').addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') { ev.preventDefault(); addNewSizeCustom(); }
       });
 
       document.getElementById('new-size-confirm').addEventListener('click', async () => {
@@ -705,6 +733,12 @@ async function openProductFormForOrder(container, sb, onCreated) {
       <div class="chip-selector" id="qp-sizes">
         ${ALL_SIZES.map(s => `<button type="button" class="chip" data-value="${s}">${s}</button>`).join('')}
       </div>
+      <div class="form-row mt-8">
+        <div class="form-group" style="flex:1;margin-bottom:0">
+          <input type="text" id="qp-size-input" placeholder="Otra talla (ej: 24-36)">
+        </div>
+        <button type="button" class="btn btn-sm btn-outline" id="qp-add-size">+</button>
+      </div>
 
       <div class="section-divider mt-16 mb-16"><span class="section-label">Colores</span></div>
       <div class="chip-list" id="qp-colors"></div>
@@ -722,10 +756,31 @@ async function openProductFormForOrder(container, sb, onCreated) {
 
   UI.openSheet('Nuevo producto', html);
 
-  // Tallas toggle
+  // Tallas toggle + talla personalizada
   document.getElementById('qp-sizes').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
-    if (chip) chip.classList.toggle('chip-active');
+    if (!chip) return;
+    if (e.target.classList.contains('chip-x')) {
+      chip.remove();
+    } else {
+      chip.classList.toggle('chip-active');
+    }
+  });
+
+  const addCustomSizeQp = () => {
+    const input = document.getElementById('qp-size-input');
+    const size = input.value.trim();
+    if (!size) return;
+    const existing = document.querySelectorAll('#qp-sizes .chip');
+    for (const c of existing) { if (c.dataset.value === size) { c.classList.add('chip-active'); input.value = ''; return; } }
+    document.getElementById('qp-sizes').insertAdjacentHTML('beforeend',
+      `<button type="button" class="chip chip-active chip-removable" data-value="${size}">${size} <span class="chip-x">&times;</span></button>`
+    );
+    input.value = '';
+  };
+  document.getElementById('qp-add-size').addEventListener('click', addCustomSizeQp);
+  document.getElementById('qp-size-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addCustomSizeQp(); }
   });
 
   // Colores
