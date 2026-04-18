@@ -68,7 +68,8 @@
 
 /* ========== Reset ========== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+html { font-size: 16px; -webkit-text-size-adjust: 100%; touch-action: manipulation; }
+button, a, [role="button"], select, label { touch-action: manipulation; }
 
 body {
   font-family: 'Nunito Sans', -apple-system, sans-serif;
@@ -227,7 +228,7 @@ a { color: var(--blue); text-decoration: none; }
   font-size: 0.95rem;
   font-weight: 700;
   cursor: pointer;
-  transition: all var(--dur) var(--ease);
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background var(--dur) var(--ease);
   -webkit-tap-highlight-color: transparent;
   min-height: 48px;
   position: relative;
@@ -697,7 +698,8 @@ a { color: var(--blue); text-decoration: none; }
   color: var(--text-secondary);
   box-shadow: var(--clay-inner);
   cursor: pointer;
-  transition: all var(--dur) var(--ease);
+  touch-action: manipulation;
+  transition: transform var(--dur) var(--ease), background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
   -webkit-tap-highlight-color: transparent;
   min-height: 40px;
 }
