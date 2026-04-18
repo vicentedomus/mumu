@@ -252,6 +252,7 @@ async function openNewOrderForm(container, sb) {
     .from('products')
     .select('id, name, cost, product_variants(id, size, color)')
     .eq('active', true)
+    .eq('product_variants.active', true)
     .order('name');
 
   const { data: locations } = await sb.from('locations').select('id, name').eq('active', true);

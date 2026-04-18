@@ -171,6 +171,7 @@ async function openNewSaleForm(locations, container, sb) {
     .from('products')
     .select('id, name, sale_price, product_variants(id, size, color, sku, inventory(quantity, location_id))')
     .eq('active', true)
+    .eq('product_variants.active', true)
     .order('name');
 
   const html = `

@@ -22,6 +22,7 @@ async function renderProductList(container, sb) {
       )
     `)
     .eq('active', true)
+    .eq('product_variants.active', true)
     .order('name');
 
   if (error) {
@@ -569,16 +570,41 @@ async function openProductForm(product, container, sb) {
       const { error } = await sb.from('products').update({ name, cost, sale_price, image_url }).eq('id', product.id);
       if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
 
-      // Crear variantes nuevas (las que no existían)
-      const existingCombos = (product.product_variants || []).map(v => `${v.size}|${v.color}`);
+      // Gestionar variantes: desactivar removidas, reactivar o crear nuevas
+      const { data: allVariants } = await sb.from('product_variants')
+        .select('id, size, color, sku, active')
+        .eq('product_id', product.id);
+
+      const selectedCombos = new Set();
+      for (const size of s) {
+        for (const color of c) {
+          selectedCombos.add(`${size}|${color}`);
+        }
+      }
+
+      // Desactivar variantes que ya no están seleccionadas
+      for (const v of (allVariants || [])) {
+        const combo = `${v.size}|${v.color}`;
+        if (v.active && !selectedCombos.has(combo)) {
+          await sb.from('product_variants').update({ active: false }).eq('id', v.id);
+        }
+      }
+
+      // Reactivar o crear variantes seleccionadas
       const editProductCode = product.code || await SKU.generateProductCode(sb);
       if (!product.code) await sb.from('products').update({ code: editProductCode }).eq('id', product.id);
       for (const size of s) {
         for (const color of c) {
-          if (!existingCombos.includes(`${size}|${color}`)) {
+          const existing = (allVariants || []).find(v => v.size === size && v.color === color);
+          if (existing) {
+            // Reactivar si estaba inactiva
+            if (!existing.active) {
+              await sb.from('product_variants').update({ active: true }).eq('id', existing.id);
+            }
+          } else {
+            // Crear variante nueva
             const sku = await SKU.ensureUniqueSKU(sb, SKU.generateSKU(editProductCode, color, size));
             const { data: newVar } = await sb.from('product_variants').insert({ product_id: product.id, size, color, sku }).select().single();
-            // Stock inicial para variante nueva
             if (newVar) {
               const input = document.querySelector(`.stock-initial-input[data-size="${size}"][data-color="${color}"]`);
               const qty = parseInt(input?.value) || 0;
