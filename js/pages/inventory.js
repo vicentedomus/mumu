@@ -392,35 +392,25 @@ async function openProductForm(product, container, sb) {
     s.forEach(size => c.forEach(color => combos.push({ size, color })));
 
     if (isEdit) {
-      // Mostrar variantes existentes con stock actual editable
+      // Mostrar variantes existentes (solo lectura, stock se edita desde el detalle)
       const existingVariants = product.product_variants || [];
+      const newCombos = combos.filter(cb => !existingVariants.find(v => v.size === cb.size && v.color === cb.color));
       preview.innerHTML = `
         <p class="text-sm text-secondary mb-8"><strong>${existingVariants.length}</strong> variante${existingVariants.length !== 1 ? 's' : ''} existentes</p>
         ${existingVariants.map(v => {
           const currentStock = (v.inventory || []).reduce((s, i) => s + i.quantity, 0);
           return `
             <div class="flex-between mb-8" style="gap:8px">
-              <span class="text-sm" style="flex:1;min-width:0"><strong>${v.color}</strong> · ${v.size} <span class="text-muted">(actual: ${currentStock})</span></span>
-              <div class="qty-stepper">
-                <button type="button" class="qty-btn qty-minus" aria-label="Menos">−</button>
-                <input type="number" class="stock-edit-input" data-variant-id="${v.id}" data-current="${currentStock}"
-                  min="0" value="${currentStock}" placeholder="0">
-                <button type="button" class="qty-btn qty-plus" aria-label="Más">+</button>
-              </div>
+              <span class="text-sm" style="flex:1;min-width:0"><strong>${v.color}</strong> · ${v.size}</span>
+              <span class="text-sm text-muted">${currentStock} en stock</span>
             </div>
           `;
         }).join('')}
-        ${combos.filter(cb => !existingVariants.find(v => v.size === cb.size && v.color === cb.color)).length > 0 ? `
+        ${newCombos.length > 0 ? `
           <p class="text-sm text-secondary mt-16 mb-8">Nuevas variantes</p>
-          ${combos.filter(cb => !existingVariants.find(v => v.size === cb.size && v.color === cb.color)).map(v => `
+          ${newCombos.map(v => `
             <div class="flex-between mb-8" style="gap:8px">
               <span class="text-sm" style="flex:1;min-width:0"><strong>${v.color}</strong> · ${v.size} <span class="text-muted">(nueva)</span></span>
-              <div class="qty-stepper">
-                <button type="button" class="qty-btn qty-minus" aria-label="Menos">−</button>
-                <input type="number" class="stock-initial-input" data-size="${v.size}" data-color="${v.color}"
-                  min="0" value="0" placeholder="0">
-                <button type="button" class="qty-btn qty-plus" aria-label="Más">+</button>
-              </div>
             </div>
           `).join('')}
         ` : ''}
@@ -489,83 +479,6 @@ async function openProductForm(product, container, sb) {
     const c = colors.length > 0 ? colors : ['único'];
 
     if (isEdit) {
-      // Detectar cambios de stock
-      const stockChanges = [];
-      document.querySelectorAll('.stock-edit-input').forEach(input => {
-        const variantId = input.dataset.variantId;
-        const current = parseInt(input.dataset.current) || 0;
-        const newQty = parseInt(input.value) || 0;
-        if (newQty !== current) {
-          stockChanges.push({ variantId, current, newQty, diff: newQty - current });
-        }
-      });
-
-      // Si hay cambios de stock, pedir nota antes de continuar
-      if (stockChanges.length > 0) {
-        // Enriquecer cambios con nombre de variante
-        const existingVariants = product.product_variants || [];
-        stockChanges.forEach(ch => {
-          const v = existingVariants.find(vv => vv.id === ch.variantId);
-          ch.label = v ? `${v.color} · ${v.size}` : '?';
-        });
-
-        const note = await new Promise((resolve) => {
-          UI.closeSheet();
-          const noteHtml = `
-            <p class="text-sm text-secondary mb-8">Estás ajustando stock en:</p>
-            ${stockChanges.map(ch => `
-              <div class="flex-between mb-8">
-                <span class="text-sm"><strong>${ch.label}</strong></span>
-                <span class="text-sm">${ch.current} → <strong>${ch.newQty}</strong> <span class="${ch.diff > 0 ? 'text-success' : 'text-danger'}">(${ch.diff > 0 ? '+' : ''}${ch.diff})</span></span>
-              </div>
-            `).join('')}
-            <div class="form-group mt-16">
-              <label>Nota del ajuste *</label>
-              <input type="text" id="adjust-note" required placeholder="Ej: Conteo físico, corrección, etc.">
-            </div>
-            <div class="flex gap-8">
-              <button class="btn btn-outline btn-full" id="adjust-cancel">Cancelar</button>
-              <button class="btn btn-primary btn-full" id="adjust-confirm">Confirmar</button>
-            </div>
-          `;
-          UI.openSheet('Ajuste de stock', noteHtml);
-          document.getElementById('adjust-cancel').addEventListener('click', () => { UI.closeSheet(); resolve(null); });
-          document.getElementById('adjust-confirm').addEventListener('click', () => {
-            const val = document.getElementById('adjust-note').value.trim();
-            if (!val) { UI.toast('Escribe una nota', 'error'); return; }
-            UI.closeSheet();
-            resolve(val);
-          });
-        });
-
-        if (!note) return; // Cancelado
-
-        // Aplicar cambios de stock
-        const { data: casaLoc } = await sb.from('locations').select('id').eq('name', 'Casa').single();
-        for (const change of stockChanges) {
-          if (!casaLoc) continue;
-          const { data: existing } = await sb.from('inventory')
-            .select('id, quantity').eq('variant_id', change.variantId).eq('location_id', casaLoc.id).single();
-
-          if (existing) {
-            await sb.from('inventory').update({ quantity: change.newQty, updated_at: new Date().toISOString() }).eq('id', existing.id);
-          } else if (change.newQty > 0) {
-            await sb.from('inventory').insert({ variant_id: change.variantId, location_id: casaLoc.id, quantity: change.newQty });
-          }
-
-          // Registrar movimiento de ajuste
-          const movType = change.diff > 0 ? 'ingreso' : 'ajuste';
-          await sb.from('inventory_movements').insert({
-            variant_id: change.variantId,
-            to_location_id: change.diff > 0 ? casaLoc.id : null,
-            from_location_id: change.diff < 0 ? casaLoc.id : null,
-            quantity: Math.abs(change.diff),
-            type: 'ajuste',
-            notes: note
-          });
-        }
-      }
-
       // Actualizar datos del producto
       const { error } = await sb.from('products').update({ name, cost, sale_price, image_url }).eq('id', product.id);
       if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
@@ -990,9 +903,12 @@ function openAddStockForm(variantId, locations, product, variants, container, sb
         return `
           <div class="flex-between mb-8" style="gap:8px">
             <span class="text-sm" style="flex:1"><strong>${l.name}</strong> <span class="text-muted">(actual: ${current})</span></span>
-            <input type="number" class="as-stock-input" data-loc-id="${l.id}" data-loc-name="${l.name}" data-current="${current}"
-              min="0" value="${current}"
-              style="width:70px;padding:8px;text-align:center;font-size:0.85rem;border-radius:var(--r-sm);border:none;background:var(--surface-high);box-shadow:var(--clay-inner)">
+            <div class="qty-stepper">
+              <button type="button" class="qty-btn qty-minus" aria-label="Menos">−</button>
+              <input type="number" class="as-stock-input" data-loc-id="${l.id}" data-loc-name="${l.name}" data-current="${current}"
+                min="0" value="${current}" placeholder="0">
+              <button type="button" class="qty-btn qty-plus" aria-label="Más">+</button>
+            </div>
           </div>
         `;
       }).join('')}
@@ -1001,6 +917,20 @@ function openAddStockForm(variantId, locations, product, variants, container, sb
   `;
 
   UI.openSheet('Ajustar stock', html);
+
+  // Stepper +/-
+  document.getElementById('add-stock-form').addEventListener('click', (e) => {
+    const btn = e.target.closest('.qty-btn');
+    if (!btn) return;
+    const input = btn.parentElement.querySelector('input[type="number"]');
+    if (!input) return;
+    let val = parseInt(input.value) || 0;
+    if (btn.classList.contains('qty-plus')) {
+      input.value = val + 1;
+    } else if (btn.classList.contains('qty-minus') && val > 0) {
+      input.value = val - 1;
+    }
+  });
 
   document.getElementById('add-stock-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1106,13 +1036,31 @@ function openTransferForm(variantId, locations, product, variants, container, sb
       </div>
       <div class="form-group">
         <label>Cantidad</label>
-        <input type="number" id="tf-quantity" min="1" value="1" required>
+        <div class="qty-stepper">
+          <button type="button" class="qty-btn qty-minus" aria-label="Menos">−</button>
+          <input type="number" id="tf-quantity" min="1" value="1" required>
+          <button type="button" class="qty-btn qty-plus" aria-label="Más">+</button>
+        </div>
       </div>
       <button type="submit" class="btn btn-primary btn-full">Trasladar</button>
     </form>
   `;
 
   UI.openSheet('Trasladar stock', html);
+
+  // Stepper +/-
+  document.getElementById('transfer-form').addEventListener('click', (e) => {
+    const btn = e.target.closest('.qty-btn');
+    if (!btn) return;
+    const input = btn.parentElement.querySelector('input[type="number"]');
+    if (!input) return;
+    let val = parseInt(input.value) || 0;
+    if (btn.classList.contains('qty-plus')) {
+      input.value = val + 1;
+    } else if (btn.classList.contains('qty-minus') && val > 0) {
+      input.value = val - 1;
+    }
+  });
 
   document.getElementById('transfer-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1158,7 +1106,11 @@ function openQuickSaleForm(variantId, locations, product, variants, container, s
       </div>
       <div class="form-group">
         <label>Cantidad</label>
-        <input type="number" id="sf-quantity" min="1" value="1" required>
+        <div class="qty-stepper">
+          <button type="button" class="qty-btn qty-minus" aria-label="Menos">−</button>
+          <input type="number" id="sf-quantity" min="1" value="1" required>
+          <button type="button" class="qty-btn qty-plus" aria-label="Más">+</button>
+        </div>
       </div>
       <div class="sale-preview card mt-8 mb-16" id="sale-preview">
         <div class="flex-between">
@@ -1171,6 +1123,21 @@ function openQuickSaleForm(variantId, locations, product, variants, container, s
   `;
 
   UI.openSheet('Registrar venta', html);
+
+  // Stepper +/-
+  document.getElementById('sale-form').addEventListener('click', (e) => {
+    const btn = e.target.closest('.qty-btn');
+    if (!btn) return;
+    const input = btn.parentElement.querySelector('input[type="number"]');
+    if (!input) return;
+    let val = parseInt(input.value) || 0;
+    if (btn.classList.contains('qty-plus')) {
+      input.value = val + 1;
+    } else if (btn.classList.contains('qty-minus') && val > 0) {
+      input.value = val - 1;
+    }
+    updatePreview();
+  });
 
   // Preview dinámico
   const updatePreview = () => {
