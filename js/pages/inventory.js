@@ -1122,6 +1122,7 @@ function openTransferForm(variantId, locations, product, variants, container, sb
 function openQuickSaleForm(variantId, locations, product, variants, container, sb) {
   UI.closeSheet();
   const variant = variants.find(v => v.id === variantId);
+  const today = todayLocalISO();
 
   const html = `
     <form id="sale-form">
@@ -1131,6 +1132,10 @@ function openQuickSaleForm(variantId, locations, product, variants, container, s
         <select id="sf-location" required>
           ${locations.map(l => `<option value="${l.id}">${l.name}${l.commission_rate > 0 ? ` (${l.commission_rate}% comisión)` : ''}</option>`).join('')}
         </select>
+      </div>
+      <div class="form-group">
+        <label>Fecha de venta</label>
+        <input type="date" id="sf-date" value="${today}" max="${today}" required>
       </div>
       <div class="form-group">
         <label>Cantidad</label>
@@ -1197,9 +1202,10 @@ function openQuickSaleForm(variantId, locations, product, variants, container, s
     await UI.withLoading(btn, async () => {
       const locationId = document.getElementById('sf-location').value;
       const quantity = parseInt(document.getElementById('sf-quantity').value);
+      const saleDate = document.getElementById('sf-date').value;
 
       const { error } = await sb.rpc('register_sale', {
-        p_variant_id: variantId, p_location_id: locationId, p_quantity: quantity
+        p_variant_id: variantId, p_location_id: locationId, p_quantity: quantity, p_skip_commission: false
       });
 
       if (error) {
@@ -1207,12 +1213,17 @@ function openQuickSaleForm(variantId, locations, product, variants, container, s
         return;
       }
 
-      // Guardar unit_cost en la venta recién creada
-      if (product?.cost) {
-        const { data: recentSale } = await sb.from('sales')
-          .select('id').eq('variant_id', variantId).eq('location_id', locationId)
-          .order('created_at', { ascending: false }).limit(1).single();
-        if (recentSale) await sb.from('sales').update({ unit_cost: product.cost }).eq('id', recentSale.id);
+      // Aplicar fecha de venta y unit_cost a la venta recién creada
+      const { data: recentSale } = await sb.from('sales')
+        .select('id').eq('variant_id', variantId).eq('location_id', locationId)
+        .order('created_at', { ascending: false }).limit(1).single();
+      if (recentSale) {
+        const updates = {};
+        if (product?.cost) updates.unit_cost = product.cost;
+        if (saleDate) updates.sale_date = saleDate;
+        if (Object.keys(updates).length > 0) {
+          await sb.from('sales').update(updates).eq('id', recentSale.id);
+        }
       }
 
       UI.closeSheet();
@@ -1220,4 +1231,9 @@ function openQuickSaleForm(variantId, locations, product, variants, container, s
       await renderProductList(container, sb);
     });
   });
+}
+
+function todayLocalISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

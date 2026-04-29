@@ -16,8 +16,9 @@ Router.register('#/dashboard', async (container) => {
   ] = await Promise.all([
     sb.from('products').select('*', { count: 'exact', head: true }).eq('active', true),
     sb.from('inventory').select('quantity'),
-    sb.from('sales').select('unit_price, quantity, commission_amount, created_at, product_variants(color, size, products(name)), locations(name)')
-      .gte('created_at', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString())
+    sb.from('sales').select('unit_price, quantity, commission_amount, sale_date, created_at, product_variants(color, size, products(name)), locations(name)')
+      .gte('sale_date', firstOfMonthLocal())
+      .order('sale_date', { ascending: false })
       .order('created_at', { ascending: false }),
     sb.from('inventory').select('quantity, product_variants(color, size, products(name))')
       .lte('quantity', 3)
@@ -105,7 +106,7 @@ Router.register('#/dashboard', async (container) => {
             </div>
             <div class="list-item-content">
               <div class="list-item-title">${s.product_variants?.products?.name || 'Venta'}</div>
-              <div class="list-item-sub">${s.locations?.name || ''} · ${new Date(s.created_at).toLocaleDateString('es-CL')}</div>
+              <div class="list-item-sub">${s.locations?.name || ''} · ${formatDashboardSaleDate(s.sale_date) || new Date(s.created_at).toLocaleDateString('es-CL')}</div>
             </div>
             <div class="list-item-right">
               <strong>$${(s.unit_price * s.quantity).toLocaleString()}</strong>
@@ -116,3 +117,15 @@ Router.register('#/dashboard', async (container) => {
     </div>
   `;
 });
+
+function firstOfMonthLocal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+function formatDashboardSaleDate(s) {
+  if (!s) return '';
+  const [y, m, d] = String(s).slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return '';
+  return new Date(y, m - 1, d).toLocaleDateString('es-CL');
+}
