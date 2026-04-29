@@ -1220,8 +1220,7 @@ function openQuickSaleForm(variantId, locations, product, variants, container, s
       if (recentSale) {
         const updates = {};
         if (product?.cost) updates.unit_cost = product.cost;
-        const createdAt = composeCreatedAt(saleDate);
-        if (createdAt) updates.created_at = createdAt;
+        if (saleDate) updates.sale_date = saleDate;
         if (Object.keys(updates).length > 0) {
           await sb.from('sales').update(updates).eq('id', recentSale.id);
         }
@@ -1234,17 +1233,7 @@ function openQuickSaleForm(variantId, locations, product, variants, container, s
   });
 }
 
-// Helpers de fecha — disponibles para todas las funciones de este módulo
 function todayLocalISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function composeCreatedAt(dateStr) {
-  if (!dateStr) return null;
-  const [y, m, d] = dateStr.split('-').map(Number);
-  if (!y || !m || !d) return null;
-  const now = new Date();
-  const result = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
-  return result.toISOString();
 }

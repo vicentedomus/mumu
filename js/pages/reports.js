@@ -23,10 +23,10 @@ async function renderReports(container, sb, period) {
     { data: inventory },
     { data: locations }
   ] = await Promise.all([
-    sb.from('sales').select('id, unit_price, unit_cost, quantity, commission_amount, created_at, variant_id, location_id, product_variants(color, size, product_id, products(name, cost)), locations(name, type, commission_rate)')
-      .gte('created_at', start.toISOString()).lte('created_at', end.toISOString()),
-    sb.from('sales').select('id, unit_price, unit_cost, quantity, commission_amount, created_at, product_variants(products(name, cost)), locations(name)')
-      .gte('created_at', prevStart.toISOString()).lte('created_at', prevEnd.toISOString()),
+    sb.from('sales').select('id, unit_price, unit_cost, quantity, commission_amount, sale_date, variant_id, location_id, product_variants(color, size, product_id, products(name, cost)), locations(name, type, commission_rate)')
+      .gte('sale_date', toDateOnly(start)).lte('sale_date', toDateOnly(end)),
+    sb.from('sales').select('id, unit_price, unit_cost, quantity, commission_amount, sale_date, product_variants(products(name, cost)), locations(name)')
+      .gte('sale_date', toDateOnly(prevStart)).lte('sale_date', toDateOnly(prevEnd)),
     sb.from('purchase_orders').select('id, total, shipping_cost, taxes, status, created_at')
       .gte('created_at', start.toISOString()).lte('created_at', end.toISOString()),
     sb.from('purchase_orders').select('id, total, shipping_cost, taxes, status, created_at')
@@ -307,7 +307,8 @@ function getWeeklyData(sales, periodStart, periodEnd) {
     if (weekEnd > periodEnd) weekEnd.setTime(periodEnd.getTime());
 
     const weekSales = sales.filter(s => {
-      const d = new Date(s.created_at);
+      const d = parseSaleDateLocal(s.sale_date);
+      if (!d) return false;
       return d >= weekStart && d <= weekEnd;
     });
 
@@ -322,6 +323,17 @@ function getWeeklyData(sales, periodStart, periodEnd) {
   }
 
   return weeks;
+}
+
+function toDateOnly(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function parseSaleDateLocal(s) {
+  if (!s) return null;
+  const [y, m, d] = String(s).slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
 }
 
 function compareRow(label, current, previous, isMoney, invertColor = false) {

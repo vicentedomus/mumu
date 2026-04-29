@@ -21,22 +21,23 @@ async function renderSalesList(container, sb, locations, filters) {
   let query = sb
     .from('sales')
     .select(`
-      id, quantity, unit_price, commission_amount, created_at,
+      id, quantity, unit_price, commission_amount, sale_date, created_at,
       product_variants ( sku, color, size, products ( name ) ),
       locations ( name )
     `)
+    .order('sale_date', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(50);
 
-  // Aplicar filtros
+  // Aplicar filtros (por fecha de venta, no por timestamp de registro)
   if (filters.locationId) {
     query = query.eq('location_id', filters.locationId);
   }
   if (filters.dateFrom) {
-    query = query.gte('created_at', filters.dateFrom);
+    query = query.gte('sale_date', filters.dateFrom);
   }
   if (filters.dateTo) {
-    query = query.lte('created_at', filters.dateTo + 'T23:59:59');
+    query = query.lte('sale_date', filters.dateTo);
   }
 
   const { data: sales, error } = await query;
@@ -111,7 +112,7 @@ async function renderSalesList(container, sb, locations, filters) {
                 <div class="list-item-right">
                   <strong>$${(s.unit_price * s.quantity).toLocaleString()}</strong>
                   ${s.commission_amount > 0 ? `<div class="text-sm text-muted">-$${s.commission_amount.toLocaleString()}</div>` : ''}
-                  <div class="text-sm text-muted">${new Date(s.created_at).toLocaleDateString('es-CL')}</div>
+                  <div class="text-sm text-muted">${formatSaleDate(s.sale_date) || new Date(s.created_at).toLocaleDateString('es-CL')}</div>
                 </div>
               </div>
             </div>
@@ -356,7 +357,6 @@ async function openNewSaleForm(locations, container, sb) {
     await UI.withLoading(btn, async () => {
       const locationId = document.getElementById('ns-location').value;
       const saleDate = document.getElementById('ns-date').value;
-      const createdAt = nsComposeCreatedAt(saleDate);
       const lines = collectCartLines();
 
       if (lines.length === 0) {
@@ -387,7 +387,7 @@ async function openNewSaleForm(locations, container, sb) {
         if (recentSale) {
           const updates = {};
           if (product?.cost) updates.unit_cost = product.cost;
-          if (createdAt) updates.created_at = createdAt;
+          if (saleDate) updates.sale_date = saleDate;
           if (Object.keys(updates).length > 0) {
             await sb.from('sales').update(updates).eq('id', recentSale.id);
           }
@@ -409,13 +409,19 @@ function nsTodayLocalISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function nsComposeCreatedAt(dateStr) {
-  if (!dateStr) return null;
-  const [y, m, d] = dateStr.split('-').map(Number);
-  if (!y || !m || !d) return null;
-  const now = new Date();
-  const result = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
-  return result.toISOString();
+// Parsea YYYY-MM-DD como fecha local (no UTC) y la formatea
+function formatSaleDate(s) {
+  if (!s) return '';
+  const [y, m, d] = String(s).slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return '';
+  return new Date(y, m - 1, d).toLocaleDateString('es-CL');
+}
+
+function formatSaleDateLong(s) {
+  if (!s) return '';
+  const [y, m, d] = String(s).slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return '';
+  return new Date(y, m - 1, d).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 function collectCartLines() {
@@ -506,9 +512,11 @@ function openSaleDetail(sale) {
   const variantLabel = [variant?.color, variant?.size].filter(Boolean).join(' · ');
   const sku = variant?.sku || '—';
   const location = sale.locations?.name || '—';
-  const date = new Date(sale.created_at);
-  const dateStr = date.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
-  const timeStr = date.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+  const saleDateStr = formatSaleDateLong(sale.sale_date);
+  const registered = sale.created_at ? new Date(sale.created_at) : null;
+  const registeredStr = registered
+    ? `${registered.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}, ${registered.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}`
+    : '';
   const subtotal = sale.unit_price * sale.quantity;
   const commission = sale.commission_amount || 0;
   const net = subtotal - commission;
@@ -540,9 +548,14 @@ function openSaleDetail(sale) {
         <span>${location}</span>
       </div>
       <div class="flex-between mb-8">
-        <span class="text-muted">Fecha</span>
-        <span>${dateStr}, ${timeStr}</span>
+        <span class="text-muted">Fecha de venta</span>
+        <span>${saleDateStr || '—'}</span>
       </div>
+      ${registeredStr ? `
+      <div class="flex-between mb-8">
+        <span class="text-muted text-sm">Registrada</span>
+        <span class="text-muted text-sm">${registeredStr}</span>
+      </div>` : ''}
 
       <div style="border-top:1px solid var(--surface-high);margin:16px 0;padding-top:12px">
         <div class="flex-between mb-8">
