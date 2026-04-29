@@ -174,6 +174,8 @@ async function openNewSaleForm(locations, container, sb) {
     .eq('product_variants.active', true)
     .order('name');
 
+  const today = nsTodayLocalISO();
+
   const html = `
     <form id="new-sale-form">
       <div class="form-group">
@@ -181,6 +183,11 @@ async function openNewSaleForm(locations, container, sb) {
         <select id="ns-location" required>
           ${locations.map(l => `<option value="${l.id}" data-rate="${l.commission_rate}">${l.name}${l.commission_rate > 0 ? ` (${l.commission_rate}%)` : ''}</option>`).join('')}
         </select>
+      </div>
+
+      <div class="form-group">
+        <label>Fecha de venta</label>
+        <input type="date" id="ns-date" value="${today}" max="${today}" required>
       </div>
 
       <div class="toggle-row mb-16" id="ns-personal-toggle">
@@ -348,6 +355,8 @@ async function openNewSaleForm(locations, container, sb) {
     const btn = document.getElementById('ns-submit');
     await UI.withLoading(btn, async () => {
       const locationId = document.getElementById('ns-location').value;
+      const saleDate = document.getElementById('ns-date').value;
+      const createdAt = nsComposeCreatedAt(saleDate);
       const lines = collectCartLines();
 
       if (lines.length === 0) {
@@ -370,13 +379,18 @@ async function openNewSaleForm(locations, container, sb) {
           allOk = false;
           break;
         }
-        // Guardar unit_cost en la venta recién creada
+        // Aplicar fecha de venta + unit_cost a la venta recién creada
         const product = products.find(p => p.product_variants?.some(v => v.id === line.variantId));
-        if (product?.cost) {
-          const { data: recentSale } = await sb.from('sales')
-            .select('id').eq('variant_id', line.variantId).eq('location_id', locationId)
-            .order('created_at', { ascending: false }).limit(1).single();
-          if (recentSale) await sb.from('sales').update({ unit_cost: product.cost }).eq('id', recentSale.id);
+        const { data: recentSale } = await sb.from('sales')
+          .select('id').eq('variant_id', line.variantId).eq('location_id', locationId)
+          .order('created_at', { ascending: false }).limit(1).single();
+        if (recentSale) {
+          const updates = {};
+          if (product?.cost) updates.unit_cost = product.cost;
+          if (createdAt) updates.created_at = createdAt;
+          if (Object.keys(updates).length > 0) {
+            await sb.from('sales').update(updates).eq('id', recentSale.id);
+          }
         }
       }
 
@@ -388,6 +402,20 @@ async function openNewSaleForm(locations, container, sb) {
       }
     });
   });
+}
+
+function nsTodayLocalISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function nsComposeCreatedAt(dateStr) {
+  if (!dateStr) return null;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  const now = new Date();
+  const result = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+  return result.toISOString();
 }
 
 function collectCartLines() {
