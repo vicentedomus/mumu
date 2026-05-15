@@ -21,7 +21,7 @@ async function renderSalesList(container, sb, locations, filters) {
   let query = sb
     .from('sales')
     .select(`
-      id, quantity, unit_price, commission_amount, sale_date, created_at,
+      id, quantity, unit_price, commission_amount, discount_amount, sale_date, created_at,
       product_variants ( sku, color, size, products ( name ) ),
       locations ( name )
     `)
@@ -47,8 +47,8 @@ async function renderSalesList(container, sb, locations, filters) {
     return;
   }
 
-  // Calcular totales
-  const totalRevenue = (sales || []).reduce((sum, s) => sum + (s.unit_price * s.quantity), 0);
+  // Calcular totales (bruto = lo realmente cobrado, post-descuento)
+  const totalRevenue = (sales || []).reduce((sum, s) => sum + (s.unit_price * s.quantity) - (s.discount_amount || 0), 0);
   const totalCommissions = (sales || []).reduce((sum, s) => sum + (s.commission_amount || 0), 0);
   const totalNet = totalRevenue - totalCommissions;
 
@@ -110,7 +110,8 @@ async function renderSalesList(container, sb, locations, filters) {
                   <div class="list-item-sub">${s.product_variants?.color || ''} ${s.product_variants?.size || ''} · x${s.quantity} · ${s.locations?.name || ''}</div>
                 </div>
                 <div class="list-item-right">
-                  <strong>$${(s.unit_price * s.quantity).toLocaleString()}</strong>
+                  <strong>$${((s.unit_price * s.quantity) - (s.discount_amount || 0)).toLocaleString()}</strong>
+                  ${s.discount_amount > 0 ? `<div class="text-sm text-muted">desc -$${s.discount_amount.toLocaleString()}</div>` : ''}
                   ${s.commission_amount > 0 ? `<div class="text-sm text-muted">-$${s.commission_amount.toLocaleString()}</div>` : ''}
                   <div class="text-sm text-muted">${formatSaleDate(s.sale_date) || new Date(s.created_at).toLocaleDateString('es-CL')}</div>
                 </div>
@@ -259,6 +260,14 @@ async function openNewSaleForm(locations, container, sb) {
             <input type="number" class="cl-qty" data-idx="${idx}" min="1" value="1" placeholder="Cant.">
           </div>
         </div>
+        <div class="form-row mt-8">
+          <div class="form-group" style="flex:2;margin-bottom:0">
+            <input type="number" class="cl-discount" data-idx="${idx}" min="0" step="0.01" placeholder="Descuento (opcional)">
+          </div>
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <button type="button" class="btn btn-outline btn-sm cl-discount-type btn-full" data-idx="${idx}" data-type="amount" aria-label="Tipo de descuento">$</button>
+          </div>
+        </div>
         <div class="cl-line-info text-sm mt-8" data-idx="${idx}"></div>
       </div>
     `);
@@ -306,7 +315,7 @@ async function openNewSaleForm(locations, container, sb) {
   });
 
   cartContainer.addEventListener('input', (e) => {
-    if (e.target.classList.contains('cl-qty')) {
+    if (e.target.classList.contains('cl-qty') || e.target.classList.contains('cl-discount')) {
       updateCartPreview(products, locations, skipCommission);
     }
   });
@@ -318,6 +327,12 @@ async function openNewSaleForm(locations, container, sb) {
         row.remove();
         updateCartPreview(products, locations, skipCommission);
       }
+    }
+    if (e.target.classList.contains('cl-discount-type')) {
+      const next = e.target.dataset.type === 'amount' ? 'percent' : 'amount';
+      e.target.dataset.type = next;
+      e.target.textContent = next === 'amount' ? '$' : '%';
+      updateCartPreview(products, locations, skipCommission);
     }
   });
 
@@ -367,11 +382,20 @@ async function openNewSaleForm(locations, container, sb) {
       // Registrar cada línea
       let allOk = true;
       for (const line of lines) {
+        // Resolver precio del producto para traducir % → monto absoluto antes de enviar
+        let linePrice = 0;
+        for (const p of (products || [])) {
+          const v = (p.product_variants || []).find(v => v.id === line.variantId);
+          if (v) { linePrice = p.sale_price; break; }
+        }
+        const lineDiscount = computeLineDiscount(linePrice, line.quantity, line.discountValue, line.discountType);
+
         const { error } = await sb.rpc('register_sale', {
           p_variant_id: line.variantId,
           p_location_id: locationId,
           p_quantity: line.quantity,
-          p_skip_commission: skipCommission
+          p_skip_commission: skipCommission,
+          p_discount_amount: lineDiscount
         });
         if (error) {
           const product = products.find(p => p.product_variants?.some(v => v.id === line.variantId));
@@ -429,11 +453,24 @@ function collectCartLines() {
   document.querySelectorAll('.cart-line').forEach(row => {
     const variantId = row.querySelector('.cl-variant')?.value;
     const qty = parseInt(row.querySelector('.cl-qty')?.value) || 0;
+    const discountValue = parseFloat(row.querySelector('.cl-discount')?.value) || 0;
+    const discountType = row.querySelector('.cl-discount-type')?.dataset.type || 'amount';
     if (variantId && qty > 0) {
-      lines.push({ variantId, quantity: qty });
+      lines.push({ variantId, quantity: qty, discountValue, discountType });
     }
   });
   return lines;
+}
+
+// Devuelve el descuento absoluto ($) para una línea, dada su info de tipo y valor.
+// Hace cap al subtotal y evita NaN/negativos.
+function computeLineDiscount(price, quantity, discountValue, discountType) {
+  const lineSubtotal = price * quantity;
+  const raw = discountType === 'percent'
+    ? lineSubtotal * (discountValue / 100)
+    : discountValue;
+  if (!isFinite(raw) || raw <= 0) return 0;
+  return Math.min(raw, lineSubtotal);
 }
 
 function updateCartPreview(products, locations, skipCommission) {
@@ -451,7 +488,8 @@ function updateCartPreview(products, locations, skipCommission) {
     return;
   }
 
-  let subtotal = 0;
+  let grossSubtotal = 0;
+  let totalDiscount = 0;
   const lineDetails = [];
 
   for (const line of lines) {
@@ -461,22 +499,35 @@ function updateCartPreview(products, locations, skipCommission) {
       const v = (p.product_variants || []).find(v => v.id === line.variantId);
       if (v) { price = p.sale_price; name = p.name; break; }
     }
-    const lineTotal = price * line.quantity;
-    subtotal += lineTotal;
-    lineDetails.push({ name, qty: line.quantity, price, lineTotal });
+    const lineGross = price * line.quantity;
+    const lineDiscount = computeLineDiscount(price, line.quantity, line.discountValue, line.discountType);
+    const lineTotal = lineGross - lineDiscount;
+    grossSubtotal += lineGross;
+    totalDiscount += lineDiscount;
+    lineDetails.push({ name, qty: line.quantity, price, lineGross, lineDiscount, lineTotal });
   }
 
+  const subtotal = grossSubtotal - totalDiscount;
   const commissionRate = skipCommission ? 0 : (loc?.commission_rate || 0);
   const commission = subtotal * (commissionRate / 100);
   const net = subtotal - commission;
 
   preview.innerHTML = `
     ${lineDetails.map(l => `
-      <div class="flex-between text-sm"><span>${l.name} x${l.qty}</span><span>$${l.lineTotal.toLocaleString()}</span></div>
+      <div class="flex-between text-sm"><span>${l.name} x${l.qty}</span><span>$${l.lineGross.toLocaleString()}</span></div>
+      ${l.lineDiscount > 0 ? `<div class="flex-between text-sm text-muted" style="padding-left:12px"><span>Descuento</span><span>-$${l.lineDiscount.toLocaleString()}</span></div>` : ''}
     `).join('')}
-    <div class="flex-between mt-8" style="border-top:1px solid rgba(194,199,209,0.1);padding-top:8px">
-      <span>Subtotal</span><strong>$${subtotal.toLocaleString()}</strong>
-    </div>
+    ${totalDiscount > 0 ? `
+      <div class="flex-between mt-8" style="border-top:1px solid rgba(194,199,209,0.1);padding-top:8px">
+        <span>Subtotal</span><span>$${grossSubtotal.toLocaleString()}</span>
+      </div>
+      <div class="flex-between text-muted"><span>Descuento total</span><span>-$${totalDiscount.toLocaleString()}</span></div>
+      <div class="flex-between"><span>Subtotal con descuento</span><strong>$${subtotal.toLocaleString()}</strong></div>
+    ` : `
+      <div class="flex-between mt-8" style="border-top:1px solid rgba(194,199,209,0.1);padding-top:8px">
+        <span>Subtotal</span><strong>$${subtotal.toLocaleString()}</strong>
+      </div>
+    `}
     ${commission > 0 ? `<div class="flex-between text-muted"><span>Comisión ${loc.commission_rate}%</span><span>-$${commission.toLocaleString()}</span></div>` : ''}
     ${skipCommission && (loc?.commission_rate || 0) > 0 ? `<div class="flex-between text-sm" style="color:var(--sage-dark)"><span>Comisión omitida (${loc.commission_rate}%)</span><span>$0</span></div>` : ''}
     <div class="flex-between mt-8" style="border-top:1px solid rgba(194,199,209,0.1);padding-top:8px">
@@ -517,7 +568,9 @@ function openSaleDetail(sale) {
   const registeredStr = registered
     ? `${registered.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}, ${registered.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}`
     : '';
-  const subtotal = sale.unit_price * sale.quantity;
+  const grossSubtotal = sale.unit_price * sale.quantity;
+  const discount = sale.discount_amount || 0;
+  const subtotal = grossSubtotal - discount;
   const commission = sale.commission_amount || 0;
   const net = subtotal - commission;
 
@@ -560,8 +613,17 @@ function openSaleDetail(sale) {
       <div style="border-top:1px solid var(--surface-high);margin:16px 0;padding-top:12px">
         <div class="flex-between mb-8">
           <span>Subtotal</span>
-          <strong>$${subtotal.toLocaleString()}</strong>
+          <strong>$${grossSubtotal.toLocaleString()}</strong>
         </div>
+        ${discount > 0 ? `
+        <div class="flex-between mb-8 text-muted">
+          <span>Descuento</span>
+          <span>-$${discount.toLocaleString()}</span>
+        </div>
+        <div class="flex-between mb-8">
+          <span>Subtotal con descuento</span>
+          <strong>$${subtotal.toLocaleString()}</strong>
+        </div>` : ''}
         ${commission > 0 ? `
         <div class="flex-between mb-8 text-muted">
           <span>Comisión</span>
