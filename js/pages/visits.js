@@ -292,10 +292,123 @@ async function renderVisitView(container, sb, location) {
       }, { onConflict: 'location_id' });
       if (notesErr) { UI.toast('Error guardando nota: ' + notesErr.message, 'error'); return; }
 
+      // Construir snapshot de diferencias para la pantalla de resumen
+      const diffs = [];
+      for (const r of rows) {
+        const edited = edits.get(r.variantId);
+        const observed = edited !== undefined ? edited : r.observedQty;
+        if (observed === r.realQty) continue;
+        diffs.push({
+          productName: r.productName,
+          color: r.color,
+          size: r.size,
+          productImage: r.productImage,
+          realQty: r.realQty,
+          observedQty: observed,
+          diff: observed - r.realQty
+        });
+      }
+
       UI.toast('Visita guardada');
-      await renderVisitView(container, sb, location);
+      renderVisitSummary(container, sb, location, { diffs, notes, photoUrl });
     });
   });
+}
+
+// ============================================
+// Pantalla de resumen tras guardar
+// ============================================
+function renderVisitSummary(container, sb, location, summary) {
+  document.getElementById('page-title').textContent = `Visita guardada · ${location.name}`;
+
+  const { diffs, notes, photoUrl } = summary;
+  diffs.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+  const negatives = diffs.filter(d => d.diff < 0);
+  const positives = diffs.filter(d => d.diff > 0);
+  const headline = diffs.length === 0
+    ? 'Sin diferencias detectadas'
+    : `${diffs.length} diferencia${diffs.length === 1 ? '' : 's'} detectada${diffs.length === 1 ? '' : 's'}`;
+
+  container.innerHTML = `
+    <div class="card" style="text-align:center;padding:20px 16px">
+      <div style="width:64px;height:64px;border-radius:50%;background:var(--sage);color:#2d5a2e;margin:0 auto 8px;display:flex;align-items:center;justify-content:center">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      </div>
+      <h2 style="margin:8px 0 4px;font-family:'Varela Round',sans-serif">Visita guardada</h2>
+      <p class="text-secondary" style="margin:0">${escapeHtml(location.name)}</p>
+      <p class="mt-8" style="margin-bottom:0">${headline}</p>
+      ${diffs.length > 0 ? `
+        <div class="flex" style="gap:12px;justify-content:center;margin-top:8px">
+          ${negatives.length > 0 ? `<span class="text-danger"><strong>${negatives.length}</strong> faltante${negatives.length === 1 ? '' : 's'}</span>` : ''}
+          ${positives.length > 0 ? `<span class="text-success"><strong>${positives.length}</strong> sobrante${positives.length === 1 ? '' : 's'}</span>` : ''}
+        </div>
+      ` : ''}
+    </div>
+
+    ${diffs.length > 0 ? `
+      <div class="section-divider mt-16 mb-8"><span class="section-label">Diferencias</span></div>
+      <div>
+        ${diffs.map(d => `
+          <div class="card" style="padding:12px 14px">
+            <div class="flex-between" style="gap:12px;align-items:center">
+              <div style="display:flex;gap:10px;align-items:center;flex:1;min-width:0">
+                ${d.productImage ? `<img src="${d.productImage}" alt="" class="product-thumb">` : ''}
+                <div style="min-width:0">
+                  <div class="list-item-title" style="font-size:0.9rem">${escapeHtml(d.productName)}</div>
+                  <div class="list-item-sub">${escapeHtml(d.color)} · ${escapeHtml(d.size)}</div>
+                </div>
+              </div>
+              <div class="text-right" style="white-space:nowrap">
+                <div class="text-sm text-muted">${d.realQty} → <strong>${d.observedQty}</strong></div>
+                <div>${diffBadge(d.diff)}</div>
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+
+    ${notes ? `
+      <div class="section-divider mt-16 mb-8"><span class="section-label">Nota</span></div>
+      <div class="card"><p style="margin:0;white-space:pre-wrap">${escapeHtml(notes)}</p></div>
+    ` : ''}
+
+    ${photoUrl ? `
+      <div class="section-divider mt-16 mb-8"><span class="section-label">Foto</span></div>
+      <div style="text-align:center"><img src="${photoUrl}" alt="" class="product-detail-img" style="max-height:240px;cursor:pointer" id="visit-summary-photo"></div>
+    ` : ''}
+
+    <div class="mt-16">
+      <button class="btn btn-primary btn-full" id="visit-summary-inventory">Ver inventario según visitas</button>
+      <button class="btn btn-outline btn-full mt-8" id="visit-summary-edit">Editar esta visita</button>
+      <button class="btn btn-outline btn-full mt-8" id="visit-summary-back">Volver a Inventario</button>
+    </div>
+  `;
+
+  document.getElementById('visit-summary-inventory').addEventListener('click', () => {
+    sessionStorage.setItem('inventory_view_mode', 'visit');
+    Router.navigate('#/inventory');
+  });
+  document.getElementById('visit-summary-edit').addEventListener('click', () => {
+    renderVisitView(container, sb, location);
+  });
+  document.getElementById('visit-summary-back').addEventListener('click', () => {
+    Router.navigate('#/inventory');
+  });
+
+  const photoEl = document.getElementById('visit-summary-photo');
+  if (photoEl) {
+    photoEl.addEventListener('click', () => {
+      const overlay = document.createElement('div');
+      overlay.className = 'lightbox-overlay';
+      overlay.innerHTML = `<img src="${photoUrl}" alt="" class="lightbox-img">`;
+      overlay.addEventListener('click', () => overlay.remove());
+      document.body.appendChild(overlay);
+    });
+  }
 }
 
 function renderVisitRow(r) {

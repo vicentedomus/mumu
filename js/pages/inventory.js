@@ -12,6 +12,8 @@ Router.register('#/inventory', async (container) => {
 // Render lista de productos
 // ============================================
 async function renderProductList(container, sb) {
+  const visitMode = sessionStorage.getItem('inventory_view_mode') === 'visit';
+
   const { data: products, error } = await sb
     .from('products')
     .select(`
@@ -32,6 +34,17 @@ async function renderProductList(container, sb) {
 
   const { data: locations } = await sb.from('locations').select('id, name').eq('active', true);
 
+  // En modo visita, traer las cantidades observadas para sustituir los totales mostrados
+  let observedByKey = {};
+  if (visitMode) {
+    const { data: observed } = await sb.from('visit_inventory').select('variant_id, location_id, observed_qty');
+    (observed || []).forEach(r => { observedByKey[`${r.variant_id}|${r.location_id}`] = r.observed_qty; });
+  }
+  const getQty = (variantId, locId, realQty) => {
+    const k = `${variantId}|${locId}`;
+    return visitMode && k in observedByKey ? observedByKey[k] : realQty;
+  };
+
   if (!products || products.length === 0) {
     container.innerHTML = `
       <div class="empty-state">
@@ -45,13 +58,27 @@ async function renderProductList(container, sb) {
   }
 
   container.innerHTML = `
-    <button class="btn btn-outline btn-full mb-16" id="btn-visit">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px;margin-right:6px">
-        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/>
-        <circle cx="12" cy="10" r="3"/>
-      </svg>
-      Realizar visita
-    </button>
+    <div class="flex gap-8 mb-16">
+      <button class="btn btn-outline" id="btn-visit" style="flex:1">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:4px">
+          <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/>
+          <circle cx="12" cy="10" r="3"/>
+        </svg>
+        Realizar visita
+      </button>
+      <button class="btn ${visitMode ? 'btn-primary' : 'btn-outline'}" id="btn-toggle-mode" style="flex:1">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:4px">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+        ${visitMode ? 'Stock real' : 'Stock visitas'}
+      </button>
+    </div>
+    ${visitMode ? `
+      <div class="card mb-16" style="background:var(--sky-light);color:var(--blue-dark);padding:10px 14px">
+        <p class="text-sm" style="margin:0">Viendo stock según visitas. Donde no hay observación, se muestra el stock real.</p>
+      </div>
+    ` : ''}
     <div class="form-group mb-16">
       <select id="filter-location">
         <option value="">Todas las ubicaciones</option>
@@ -66,7 +93,7 @@ async function renderProductList(container, sb) {
         const stockByLocId = {};
         (p.product_variants || []).forEach(v => {
           (v.inventory || []).forEach(inv => {
-            stockByLocId[inv.location_id] = (stockByLocId[inv.location_id] || 0) + inv.quantity;
+            stockByLocId[inv.location_id] = (stockByLocId[inv.location_id] || 0) + getQty(v.id, inv.location_id, inv.quantity);
           });
         });
         return `
@@ -76,7 +103,7 @@ async function renderProductList(container, sb) {
             <span>Eliminar</span>
           </div>
           <div class="swipeable-content">
-            ${renderProductCard(p)}
+            ${renderProductCard(p, getQty)}
           </div>
         </div>
       `; }).join('')}
@@ -89,6 +116,15 @@ async function renderProductList(container, sb) {
   // Botón de visitas
   const visitBtn = document.getElementById('btn-visit');
   if (visitBtn) visitBtn.addEventListener('click', () => Router.navigate('#/visits'));
+
+  // Toggle modo de visualización (real ↔ visitas)
+  const toggleBtn = document.getElementById('btn-toggle-mode');
+  if (toggleBtn) toggleBtn.addEventListener('click', async () => {
+    const newMode = visitMode ? 'real' : 'visit';
+    sessionStorage.setItem('inventory_view_mode', newMode);
+    UI.toast(newMode === 'visit' ? 'Mostrando stock según visitas' : 'Mostrando stock real');
+    await renderProductList(container, sb);
+  });
 
   // Helper: aplicar filtros de búsqueda + ubicación
   function applyProductFilters() {
@@ -145,9 +181,10 @@ async function renderProductList(container, sb) {
 
 }
 
-function renderProductCard(p) {
+function renderProductCard(p, getQty) {
+  const qtyOf = getQty || ((_v, _l, real) => real);
   const totalStock = (p.product_variants || []).reduce((sum, v) =>
-    sum + (v.inventory || []).reduce((s, i) => s + i.quantity, 0), 0);
+    sum + (v.inventory || []).reduce((s, i) => s + qtyOf(v.id, i.location_id, i.quantity), 0), 0);
   const variants = (p.product_variants || []).length;
   const colors = [...new Set((p.product_variants || []).map(v => v.color))];
 
@@ -156,7 +193,7 @@ function renderProductCard(p) {
   (p.product_variants || []).forEach(v => {
     (v.inventory || []).forEach(inv => {
       const locName = inv.locations?.name || '?';
-      stockByLoc[locName] = (stockByLoc[locName] || 0) + inv.quantity;
+      stockByLoc[locName] = (stockByLoc[locName] || 0) + qtyOf(v.id, inv.location_id, inv.quantity);
     });
   });
 
