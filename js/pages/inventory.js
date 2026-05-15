@@ -45,6 +45,13 @@ async function renderProductList(container, sb) {
   }
 
   container.innerHTML = `
+    <button class="btn btn-outline btn-full mb-16" id="btn-visit">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px;margin-right:6px">
+        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/>
+        <circle cx="12" cy="10" r="3"/>
+      </svg>
+      Realizar visita
+    </button>
     <div class="form-group mb-16">
       <select id="filter-location">
         <option value="">Todas las ubicaciones</option>
@@ -78,6 +85,10 @@ async function renderProductList(container, sb) {
 
   // FAB para agregar producto
   addFAB(() => openProductForm(null, container, sb));
+
+  // Botón de visitas
+  const visitBtn = document.getElementById('btn-visit');
+  if (visitBtn) visitBtn.addEventListener('click', () => Router.navigate('#/visits'));
 
   // Helper: aplicar filtros de búsqueda + ubicación
   function applyProductFilters() {
