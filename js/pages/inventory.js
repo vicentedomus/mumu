@@ -58,20 +58,27 @@ async function renderProductList(container, sb) {
   }
 
   container.innerHTML = `
+    <button class="btn btn-outline btn-full mb-8" id="btn-visit">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px;margin-right:6px">
+        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/>
+        <circle cx="12" cy="10" r="3"/>
+      </svg>
+      Realizar visita
+    </button>
     <div class="flex gap-8 mb-16">
-      <button class="btn btn-outline" id="btn-visit" style="flex:1">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:4px">
-          <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/>
-          <circle cx="12" cy="10" r="3"/>
-        </svg>
-        Realizar visita
-      </button>
       <button class="btn ${visitMode ? 'btn-primary' : 'btn-outline'}" id="btn-toggle-mode" style="flex:1">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:4px">
           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
           <circle cx="12" cy="12" r="3"/>
         </svg>
         ${visitMode ? 'Stock real' : 'Stock visitas'}
+      </button>
+      <button class="btn btn-outline" id="btn-history" style="flex:1">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:4px">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+        Historial
       </button>
     </div>
     ${visitMode ? `
@@ -125,6 +132,10 @@ async function renderProductList(container, sb) {
     UI.toast(newMode === 'visit' ? 'Mostrando stock según visitas' : 'Mostrando stock real');
     await renderProductList(container, sb);
   });
+
+  // Historial de visitas
+  const historyBtn = document.getElementById('btn-history');
+  if (historyBtn) historyBtn.addEventListener('click', () => Router.navigate('#/visits/history'));
 
   // Helper: aplicar filtros de búsqueda + ubicación
   function applyProductFilters() {

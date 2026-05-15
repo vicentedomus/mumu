@@ -299,6 +299,8 @@ async function renderVisitView(container, sb, location) {
         const observed = edited !== undefined ? edited : r.observedQty;
         if (observed === r.realQty) continue;
         diffs.push({
+          variantId: r.variantId,
+          productCode: r.productCode,
           productName: r.productName,
           color: r.color,
           size: r.size,
@@ -308,6 +310,29 @@ async function renderVisitView(container, sb, location) {
           diff: observed - r.realQty
         });
       }
+
+      // Insertar snapshot en historial (visit_sessions). Falla silenciosa: no
+      // queremos bloquear el guardado de la visita si la inserción del historial
+      // falla por algún motivo (ej. RLS, conexión).
+      const sessionItems = diffs.map(d => ({
+        variant_id: d.variantId,
+        product_code: d.productCode,
+        product_name: d.productName,
+        product_image: d.productImage,
+        color: d.color,
+        size: d.size,
+        real_qty: d.realQty,
+        observed_qty: d.observedQty,
+        diff: d.diff
+      }));
+      const { error: sessErr } = await sb.from('visit_sessions').insert({
+        location_id: location.id,
+        notes,
+        photo_url: photoUrl,
+        items: sessionItems,
+        diff_count: sessionItems.length
+      });
+      if (sessErr) console.warn('No se pudo guardar en historial:', sessErr);
 
       UI.toast('Visita guardada');
       renderVisitSummary(container, sb, location, { diffs, notes, photoUrl });
@@ -383,8 +408,8 @@ function renderVisitSummary(container, sb, location, summary) {
 
     <div class="mt-16">
       <button class="btn btn-primary btn-full" id="visit-summary-inventory">Ver inventario según visitas</button>
+      <button class="btn btn-outline btn-full mt-8" id="visit-summary-history">Ver historial de visitas</button>
       <button class="btn btn-outline btn-full mt-8" id="visit-summary-edit">Editar esta visita</button>
-      <button class="btn btn-outline btn-full mt-8" id="visit-summary-back">Volver a Inventario</button>
     </div>
   `;
 
@@ -392,11 +417,11 @@ function renderVisitSummary(container, sb, location, summary) {
     sessionStorage.setItem('inventory_view_mode', 'visit');
     Router.navigate('#/inventory');
   });
+  document.getElementById('visit-summary-history').addEventListener('click', () => {
+    Router.navigate('#/visits/history');
+  });
   document.getElementById('visit-summary-edit').addEventListener('click', () => {
     renderVisitView(container, sb, location);
-  });
-  document.getElementById('visit-summary-back').addEventListener('click', () => {
-    Router.navigate('#/inventory');
   });
 
   const photoEl = document.getElementById('visit-summary-photo');
@@ -503,4 +528,224 @@ function setupVisitPhoto() {
 function escapeHtml(s) {
   if (s == null) return '';
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ============================================
+// Historial de visitas
+// ============================================
+Router.register('#/visits/history', async (container) => {
+  document.getElementById('page-title').textContent = 'Historial de visitas';
+  const sb = getSupabase();
+  if (!sb) return;
+  await renderVisitHistory(container, sb);
+});
+
+async function renderVisitHistory(container, sb) {
+  document.getElementById('page-title').textContent = 'Historial de visitas';
+
+  const [sessionsRes, draftInvRes, draftNotesRes, locsRes] = await Promise.all([
+    sb.from('visit_sessions')
+      .select('id, location_id, notes, photo_url, items, diff_count, created_at')
+      .order('created_at', { ascending: false })
+      .limit(200),
+    sb.from('visit_inventory').select('location_id, updated_at'),
+    sb.from('visit_notes').select('location_id, notes, photo_url, updated_at'),
+    sb.from('locations').select('id, name, type').eq('active', true).eq('type', 'consignacion').order('name')
+  ]);
+
+  if (sessionsRes.error) {
+    container.innerHTML = `<p class="text-danger">Error cargando historial: ${sessionsRes.error.message}</p>`;
+    return;
+  }
+
+  const locations = locsRes.data || [];
+  const locById = Object.fromEntries(locations.map(l => [l.id, l]));
+
+  // Agregar borradores activos por sucursal
+  const drafts = {};
+  for (const l of locations) drafts[l.id] = { observationCount: 0, hasNoteOrPhoto: false, lastUpdated: null };
+  (draftInvRes.data || []).forEach(r => {
+    const d = drafts[r.location_id];
+    if (!d) return;
+    d.observationCount += 1;
+    if (!d.lastUpdated || (r.updated_at && r.updated_at > d.lastUpdated)) d.lastUpdated = r.updated_at;
+  });
+  (draftNotesRes.data || []).forEach(r => {
+    const d = drafts[r.location_id];
+    if (!d) return;
+    if ((r.notes && r.notes.length > 0) || r.photo_url) d.hasNoteOrPhoto = true;
+    if (!d.lastUpdated || (r.updated_at && r.updated_at > d.lastUpdated)) d.lastUpdated = r.updated_at;
+  });
+
+  const sessions = sessionsRes.data || [];
+
+  container.innerHTML = `
+    <button class="btn btn-sm btn-outline mb-16" id="history-back">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="vertical-align:-2px"><polyline points="15 18 9 12 15 6"/></svg>
+      Volver a Inventario
+    </button>
+
+    <div class="section-divider mb-8"><span class="section-label">Borradores activos</span></div>
+    <p class="text-sm text-muted mb-8">Lo que estás contando ahora mismo en cada sucursal, antes de guardar.</p>
+    ${locations.length === 0
+      ? '<p class="text-muted text-sm">No hay sucursales de consignación.</p>'
+      : locations.map(l => {
+          const d = drafts[l.id];
+          const hasDraft = d.observationCount > 0 || d.hasNoteOrPhoto;
+          const summary = hasDraft
+            ? `${d.observationCount} observación${d.observationCount === 1 ? '' : 'es'}${d.hasNoteOrPhoto ? ' · nota/foto' : ''}`
+            : 'Sin borrador activo';
+          return `
+            <div class="card" style="padding:12px 14px">
+              <div class="flex-between" style="align-items:center;gap:8px">
+                <div style="min-width:0">
+                  <div class="list-item-title">${escapeHtml(l.name)}</div>
+                  <div class="list-item-sub">${summary}</div>
+                </div>
+                <button class="btn btn-sm btn-outline text-danger" data-action="reset-draft" data-loc-id="${l.id}" data-loc-name="${escapeHtml(l.name)}" ${hasDraft ? '' : 'disabled'}>
+                  Resetear
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+
+    <div class="section-divider mt-16 mb-8"><span class="section-label">Visitas guardadas</span></div>
+    ${sessions.length === 0
+      ? '<p class="text-muted text-sm">Aún no hay visitas guardadas. Al guardar una visita, queda registrada acá.</p>'
+      : sessions.map(s => {
+          const loc = locById[s.location_id];
+          const date = new Date(s.created_at).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+          const extras = [];
+          if (s.photo_url) extras.push('foto');
+          if (s.notes && s.notes.length > 0) extras.push('nota');
+          const extrasStr = extras.length > 0 ? ' · ' + extras.join(', ') : '';
+          return `
+            <div class="card session-card" data-session-id="${s.id}" style="padding:12px 14px;cursor:pointer">
+              <div class="flex-between" style="align-items:center;gap:8px">
+                <div style="min-width:0;flex:1">
+                  <div class="list-item-title">${escapeHtml(loc ? loc.name : '(sucursal eliminada)')}</div>
+                  <div class="list-item-sub">${date} · ${s.diff_count} diferencia${s.diff_count === 1 ? '' : 's'}${extrasStr}</div>
+                </div>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="opacity:0.5"><polyline points="9 18 15 12 9 6"/></svg>
+              </div>
+            </div>
+          `;
+        }).join('')}
+  `;
+
+  document.getElementById('history-back').addEventListener('click', () => Router.navigate('#/inventory'));
+
+  container.querySelectorAll('[data-action="reset-draft"]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const locId = btn.dataset.locId;
+      const locName = btn.dataset.locName;
+      const ok = await UI.confirm(`¿Resetear el borrador de ${locName}? Se borran las observaciones, nota y foto del borrador activo. El historial guardado no se modifica.`);
+      if (!ok) return;
+      await Promise.all([
+        sb.from('visit_inventory').delete().eq('location_id', locId),
+        sb.from('visit_notes').delete().eq('location_id', locId)
+      ]);
+      UI.toast(`Borrador de ${locName} reseteado`);
+      await renderVisitHistory(container, sb);
+    });
+  });
+
+  container.querySelectorAll('.session-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const id = card.dataset.sessionId;
+      const session = sessions.find(s => s.id === id);
+      if (!session) return;
+      const loc = locById[session.location_id];
+      renderVisitSessionDetail(container, sb, session, loc);
+    });
+  });
+}
+
+function renderVisitSessionDetail(container, sb, session, location) {
+  document.getElementById('page-title').textContent = 'Visita guardada';
+
+  const date = new Date(session.created_at).toLocaleString('es-MX', {
+    weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
+  });
+  const items = (session.items || []).slice().sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+  const negatives = items.filter(i => i.diff < 0);
+  const positives = items.filter(i => i.diff > 0);
+
+  container.innerHTML = `
+    <button class="btn btn-sm btn-outline mb-16" id="detail-back">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="vertical-align:-2px"><polyline points="15 18 9 12 15 6"/></svg>
+      Volver al historial
+    </button>
+
+    <div class="card" style="text-align:center;padding:18px 16px">
+      <h2 style="margin:0;font-family:'Varela Round',sans-serif">${escapeHtml(location ? location.name : '(sucursal eliminada)')}</h2>
+      <p class="text-secondary" style="margin:4px 0 0;text-transform:capitalize">${date}</p>
+      <p class="mt-8" style="margin-bottom:0">${items.length} diferencia${items.length === 1 ? '' : 's'} registrada${items.length === 1 ? '' : 's'}</p>
+      ${items.length > 0 ? `
+        <div class="flex" style="gap:12px;justify-content:center;margin-top:4px">
+          ${negatives.length > 0 ? `<span class="text-danger"><strong>${negatives.length}</strong> faltante${negatives.length === 1 ? '' : 's'}</span>` : ''}
+          ${positives.length > 0 ? `<span class="text-success"><strong>${positives.length}</strong> sobrante${positives.length === 1 ? '' : 's'}</span>` : ''}
+        </div>
+      ` : ''}
+    </div>
+
+    ${items.length > 0 ? `
+      <div class="section-divider mt-16 mb-8"><span class="section-label">Diferencias</span></div>
+      ${items.map(d => `
+        <div class="card" style="padding:12px 14px">
+          <div class="flex-between" style="gap:12px;align-items:center">
+            <div style="display:flex;gap:10px;align-items:center;flex:1;min-width:0">
+              ${d.product_image ? `<img src="${d.product_image}" alt="" class="product-thumb">` : ''}
+              <div style="min-width:0">
+                <div class="list-item-title" style="font-size:0.9rem">${escapeHtml(d.product_name)}</div>
+                <div class="list-item-sub">${escapeHtml(d.color)} · ${escapeHtml(d.size)}</div>
+              </div>
+            </div>
+            <div class="text-right" style="white-space:nowrap">
+              <div class="text-sm text-muted">${d.real_qty} → <strong>${d.observed_qty}</strong></div>
+              <div>${diffBadge(d.diff)}</div>
+            </div>
+          </div>
+        </div>
+      `).join('')}
+    ` : ''}
+
+    ${session.notes ? `
+      <div class="section-divider mt-16 mb-8"><span class="section-label">Nota</span></div>
+      <div class="card"><p style="margin:0;white-space:pre-wrap">${escapeHtml(session.notes)}</p></div>
+    ` : ''}
+
+    ${session.photo_url ? `
+      <div class="section-divider mt-16 mb-8"><span class="section-label">Foto</span></div>
+      <div style="text-align:center"><img src="${session.photo_url}" alt="" class="product-detail-img" style="max-height:240px;cursor:pointer" id="session-photo"></div>
+    ` : ''}
+
+    <div class="mt-16">
+      <button class="btn btn-outline btn-full text-danger" id="session-delete">Eliminar este registro del historial</button>
+    </div>
+  `;
+
+  document.getElementById('detail-back').addEventListener('click', () => renderVisitHistory(container, sb));
+
+  document.getElementById('session-delete').addEventListener('click', async () => {
+    const ok = await UI.confirm('¿Eliminar este registro del historial? No afecta al inventario ni al borrador activo, pero no se puede deshacer.');
+    if (!ok) return;
+    const { error } = await sb.from('visit_sessions').delete().eq('id', session.id);
+    if (error) { UI.toast('Error: ' + error.message, 'error'); return; }
+    UI.toast('Registro eliminado');
+    await renderVisitHistory(container, sb);
+  });
+
+  const photoEl = document.getElementById('session-photo');
+  if (photoEl) {
+    photoEl.addEventListener('click', () => {
+      const overlay = document.createElement('div');
+      overlay.className = 'lightbox-overlay';
+      overlay.innerHTML = `<img src="${session.photo_url}" alt="" class="lightbox-img">`;
+      overlay.addEventListener('click', () => overlay.remove());
+      document.body.appendChild(overlay);
+    });
+  }
 }
