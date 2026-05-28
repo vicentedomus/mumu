@@ -23,8 +23,7 @@ const Router = {
     // Limpiar FAB y modales al cambiar de página
     const fab = document.getElementById('fab-main');
     if (fab) fab.remove();
-    const overlay = document.getElementById('modal-overlay');
-    if (overlay) overlay.remove();
+    document.querySelectorAll('.modal-overlay').forEach((o) => o.remove());
 
     // Cargar página
     const container = document.getElementById('page-content');

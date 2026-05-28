@@ -383,21 +383,36 @@ async function openNewOrderForm(container, sb) {
       const colorSelect = document.querySelector(`.oi-color[data-idx="${idx}"]`);
       const costInput = document.querySelector(`.oi-cost[data-idx="${idx}"]`);
 
-      // Crear producto nuevo inline
+      // Crear producto nuevo inline — se apila encima del formulario de pedido
+      // para no perder lo capturado; al volver se actualizan los dropdowns.
       if (productId === '__new__') {
         e.target.value = ''; // reset select
-        UI.closeSheet();
         openProductFormForOrder(container, sb, async (newProduct) => {
-          // Recargar productos y reabrir formulario de pedido
+          // Recargar productos sin destruir el formulario de pedido
           const { data: refreshed } = await sb
             .from('products')
             .select('id, name, cost, product_variants(id, size, color)')
             .eq('active', true)
             .order('name');
           productsList = refreshed || [];
-          // Re-abrir el formulario de pedido con el producto nuevo pre-seleccionado
-          UI.toast('Producto creado — agrégalo al pedido');
-          openNewOrderForm(container, sb);
+
+          // Refrescar las opciones de todos los selects de producto, preservando
+          // la selección actual de cada fila.
+          document.querySelectorAll('.oi-product').forEach((sel) => {
+            const current = sel.value;
+            sel.innerHTML = `<option value="">Seleccionar producto...</option>`
+              + productsList.map(p => `<option value="${p.id}" data-cost="${p.cost}">${p.name} ($${p.cost} c/u)</option>`).join('')
+              + `<option value="__new__">＋ Crear producto nuevo...</option>`;
+            sel.value = current;
+          });
+
+          // Pre-seleccionar el producto recién creado en esta misma fila.
+          const thisSelect = document.querySelector(`.oi-product[data-idx="${idx}"]`);
+          if (thisSelect && newProduct) {
+            thisSelect.value = newProduct.id;
+            thisSelect.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          UI.toast('Producto creado y agregado al pedido');
         });
         return;
       }
@@ -458,7 +473,7 @@ async function openNewOrderForm(container, sb) {
         </div>
         <button class="btn btn-primary btn-full mt-16" id="new-size-confirm" disabled>Agregar talla</button>
       `;
-      UI.openSheet('Nueva talla', sizeHtml);
+      UI.openSheet('Nueva talla', sizeHtml, null, { stack: true });
 
       let selectedSize = null;
       document.getElementById('new-size-chips').addEventListener('click', (ev) => {
@@ -547,7 +562,7 @@ async function openNewOrderForm(container, sb) {
         </div>
         <button class="btn btn-primary btn-full" id="new-color-confirm">Agregar color</button>
       `;
-      UI.openSheet('Nuevo color', colorHtml);
+      UI.openSheet('Nuevo color', colorHtml, null, { stack: true });
 
       document.getElementById('new-color-confirm').addEventListener('click', async () => {
         const colorName = document.getElementById('new-color-input').value.trim().toLowerCase();
@@ -768,7 +783,7 @@ async function openProductFormForOrder(container, sb, onCreated) {
     </form>
   `;
 
-  UI.openSheet('Nuevo producto', html);
+  UI.openSheet('Nuevo producto', html, null, { stack: true });
 
   // Tallas toggle + talla personalizada
   document.getElementById('qp-sizes').addEventListener('click', (e) => {
@@ -817,10 +832,9 @@ async function openProductFormForOrder(container, sb, onCreated) {
     if (e.target.classList.contains('chip-x')) e.target.closest('.chip').remove();
   });
 
-  // Cancelar
+  // Cancelar — solo cierra este modal y vuelve al formulario de pedido (intacto)
   document.getElementById('qp-cancel').addEventListener('click', () => {
     UI.closeSheet();
-    openNewOrderForm(container, sb);
   });
 
   // Submit
