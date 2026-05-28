@@ -1,27 +1,36 @@
 // UI helpers — modales, toasts, confirmaciones
 const UI = {
-  // Abrir modal tipo bottom sheet
-  openSheet(title, contentHTML, onClose) {
-    this.closeSheet(); // cerrar si hay uno abierto
+  _zBase: 200, // coincide con .modal-overlay en styles.css
+
+  // Abrir modal tipo bottom sheet.
+  // options.stack === true → apila el modal encima del actual sin cerrarlo,
+  // para no perder el contenido del modal inferior (ej: crear producto/talla
+  // desde el formulario de un pedido). Por defecto reemplaza el modal abierto.
+  openSheet(title, contentHTML, onClose, options = {}) {
+    if (!options.stack) this.closeAllSheets();
+
+    const depth = document.querySelectorAll('.modal-overlay').length;
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    overlay.id = 'modal-overlay';
+    overlay.id = depth === 0 ? 'modal-overlay' : `modal-overlay-${depth}`;
+    overlay.style.zIndex = this._zBase + depth * 10;
+    overlay._onClose = onClose;
     overlay.innerHTML = `
       <div class="modal-sheet">
         <div class="modal-header">
           <h2>${title}</h2>
-          <button class="modal-close" id="modal-close-btn">&times;</button>
+          <button class="modal-close">&times;</button>
         </div>
-        <div id="modal-body">${contentHTML}</div>
+        <div class="modal-body">${contentHTML}</div>
       </div>
     `;
     document.body.appendChild(overlay);
 
-    // Cerrar al tocar overlay o botón X
+    // Cerrar al tocar overlay o botón X (solo cierra este modal, no los de abajo)
     overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) this.closeSheet(onClose);
+      if (e.target === overlay) this.closeSheet();
     });
-    document.getElementById('modal-close-btn').addEventListener('click', () => this.closeSheet(onClose));
+    overlay.querySelector('.modal-close').addEventListener('click', () => this.closeSheet());
 
     // Swipe-down-to-close (móvil)
     const sheet = overlay.querySelector('.modal-sheet');
@@ -56,22 +65,30 @@ const UI = {
       if (diff > 120) {
         sheet.style.transform = 'translateY(100%)';
         overlay.style.background = 'rgba(61,53,48,0)';
-        setTimeout(() => this.closeSheet(onClose), 300);
+        setTimeout(() => this.closeSheet(), 300);
       } else {
         sheet.style.transform = '';
         overlay.style.background = '';
       }
     }, { passive: true });
 
-    return document.getElementById('modal-body');
+    return overlay.querySelector('.modal-body');
   },
 
+  // Cierra el modal superior (el último apilado). Si se pasa onClose, sobreescribe
+  // el callback registrado al abrir.
   closeSheet(onClose) {
-    const overlay = document.getElementById('modal-overlay');
-    if (overlay) {
-      overlay.remove();
-      if (typeof onClose === 'function') onClose();
-    }
+    const overlays = document.querySelectorAll('.modal-overlay');
+    const overlay = overlays[overlays.length - 1];
+    if (!overlay) return;
+    const cb = typeof onClose === 'function' ? onClose : overlay._onClose;
+    overlay.remove();
+    if (typeof cb === 'function') cb();
+  },
+
+  // Cierra todos los modales abiertos (usado al cambiar de página).
+  closeAllSheets() {
+    document.querySelectorAll('.modal-overlay').forEach((o) => o.remove());
   },
 
   // Toast notification
