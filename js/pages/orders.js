@@ -293,7 +293,7 @@ async function openNewOrderForm(container, sb) {
       <div class="section-divider mt-16 mb-16"><span class="section-label">Artículos del pedido</span></div>
 
       <div id="order-items-container"></div>
-      <button type="button" class="btn btn-outline btn-sm mt-8 btn-full" id="add-order-item">+ Agregar artículo</button>
+      <button type="button" class="btn btn-outline btn-sm mt-8 btn-full" id="add-order-item">+ Agregar producto</button>
 
       <div class="card sale-preview mt-16 mb-16" id="order-total-preview" style="cursor:default">
         <p class="text-sm text-muted">Agrega artículos al pedido</p>
@@ -304,84 +304,132 @@ async function openNewOrderForm(container, sb) {
   `;
 
   UI.openSheet('Nuevo pedido', html);
-  let itemIndex = 0;
+  let blockIndex = 0;   // índice de bloques de producto
+  let variantIndex = 0; // índice global de filas de variante (talla/color)
 
   let productsList = products || [];
 
-  const addItemRow = () => {
-    const idx = itemIndex++;
-    document.getElementById('order-items-container').insertAdjacentHTML('beforeend', `
-      <div class="card order-item-row" data-idx="${idx}" style="cursor:default;padding:14px;margin-bottom:10px">
-        <div class="form-group" style="margin-bottom:10px">
-          <select class="oi-product" data-idx="${idx}">
-            <option value="">Seleccionar producto...</option>
-            ${productsList.map(p => `<option value="${p.id}" data-cost="${p.cost}">${p.name} ($${p.cost} c/u)</option>`).join('')}
-            <option value="__new__">＋ Crear producto nuevo...</option>
-          </select>
-        </div>
-        <div class="form-row" style="margin-bottom:10px">
+  const productOptions = () =>
+    productsList.map(p => `<option value="${p.id}" data-cost="${p.cost}">${p.name} ($${p.cost} c/u)</option>`).join('');
+
+  const getProduct = (pidx) => {
+    const sel = document.querySelector(`.op-product[data-pidx="${pidx}"]`);
+    return sel && sel.value ? productsList.find(p => p.id === sel.value) : null;
+  };
+
+  const sizeOptionsHTML = (product) =>
+    [...new Set((product.product_variants || []).map(v => v.size))]
+      .map(s => `<option value="${s}">${s}</option>`).join('')
+    + '<option value="__new_size__">+ Nueva talla...</option>';
+
+  const colorOptionsHTML = (product) =>
+    [...new Set((product.product_variants || []).map(v => v.color))]
+      .map(c => `<option value="${c}">${c}</option>`).join('')
+    + '<option value="__new_color__">+ Nuevo color...</option>';
+
+  // Resolver el variant_id de una fila a partir del producto del bloque + talla + color
+  function resolveVariant(row) {
+    const product = getProduct(row.dataset.pidx);
+    const size = row.querySelector('.ov-size')?.value;
+    const color = row.querySelector('.ov-color')?.value;
+    const hidden = row.querySelector('.ov-variant');
+    if (!product || !size || !color || size.startsWith('__') || color.startsWith('__')) {
+      hidden.value = ''; return;
+    }
+    const variant = (product.product_variants || []).find(v => v.size === size && v.color === color);
+    hidden.value = variant ? variant.id : '';
+  }
+
+  // Rellenar los selects de talla/color de una fila según el producto del bloque
+  function fillRowOptions(row, product, { resetCost = false } = {}) {
+    const sizeSel = row.querySelector('.ov-size');
+    const colorSel = row.querySelector('.ov-color');
+    const costInput = row.querySelector('.ov-cost');
+    if (!product) {
+      sizeSel.innerHTML = '<option value="">—</option>'; sizeSel.disabled = true;
+      colorSel.innerHTML = '<option value="">—</option>'; colorSel.disabled = true;
+      row.querySelector('.ov-variant').value = '';
+      return;
+    }
+    const prevSize = sizeSel.value, prevColor = colorSel.value;
+    const sizes = [...new Set((product.product_variants || []).map(v => v.size))];
+    const colors = [...new Set((product.product_variants || []).map(v => v.color))];
+    sizeSel.innerHTML = sizeOptionsHTML(product); sizeSel.disabled = false;
+    colorSel.innerHTML = colorOptionsHTML(product); colorSel.disabled = false;
+    if (sizes.includes(prevSize)) sizeSel.value = prevSize;   // preservar si sigue válida
+    if (colors.includes(prevColor)) colorSel.value = prevColor;
+    if (resetCost || !costInput.value) costInput.value = product.cost ?? '';
+    resolveVariant(row);
+  }
+
+  // Agregar una fila de variante (talla/color/cantidad/costo) dentro de un bloque
+  const addVariantRow = (pidx) => {
+    const vidx = variantIndex++;
+    const variants = document.querySelector(`.op-variants[data-pidx="${pidx}"]`);
+    const isFirst = variants.children.length === 0;
+    variants.insertAdjacentHTML('beforeend', `
+      <div class="ov-row" data-pidx="${pidx}" data-vidx="${vidx}"${isFirst ? '' : ' style="margin-top:10px;padding-top:10px;border-top:1px dashed rgba(194,199,209,0.18)"'}>
+        <div class="form-row" style="margin-bottom:8px">
           <div class="form-group" style="flex:1;margin-bottom:0">
             <label style="font-size:0.7rem">Talla</label>
-            <select class="oi-size" data-idx="${idx}" disabled>
-              <option value="">—</option>
-            </select>
+            <select class="ov-size" disabled><option value="">—</option></select>
           </div>
           <div class="form-group" style="flex:1;margin-bottom:0">
             <label style="font-size:0.7rem">Color</label>
-            <select class="oi-color" data-idx="${idx}" disabled>
-              <option value="">—</option>
-            </select>
+            <select class="ov-color" disabled><option value="">—</option></select>
           </div>
         </div>
-        <input type="hidden" class="oi-variant" data-idx="${idx}" value="">
+        <input type="hidden" class="ov-variant" value="">
         <div class="form-row">
           <div class="form-group" style="flex:1;margin-bottom:0">
-            <input type="number" class="oi-qty" data-idx="${idx}" min="1" value="1" placeholder="Cant.">
+            <input type="number" class="ov-qty" min="1" value="1" placeholder="Cant.">
           </div>
           <div class="form-group" style="flex:1;margin-bottom:0">
-            <input type="number" class="oi-cost" data-idx="${idx}" step="0.01" min="0" placeholder="Costo unit.">
+            <input type="number" class="ov-cost" step="0.01" min="0" placeholder="Costo unit.">
           </div>
-          <button type="button" class="remove-variant oi-remove" data-idx="${idx}" style="margin-bottom:0">&times;</button>
-        </div>
-        <div class="oi-links-container" data-idx="${idx}" style="margin-top:8px">
-          <div class="form-group" style="margin-bottom:0">
-            <input type="url" class="oi-source-url" data-idx="${idx}" placeholder="Link del producto (Temu, Shein...)">
-          </div>
-          <div class="form-row mt-8" style="gap:6px;margin-bottom:0;justify-content:flex-end">
-            <button type="button" class="btn-icon oi-add-link" data-idx="${idx}" title="Agregar otro link" style="flex-shrink:0">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            </button>
-          </div>
+          <button type="button" class="remove-variant ov-remove" title="Quitar talla/color" style="margin-bottom:0">&times;</button>
         </div>
       </div>
     `);
+    const row = variants.querySelector(`.ov-row[data-vidx="${vidx}"]`);
+    const product = getProduct(pidx);
+    if (product) fillRowOptions(row, product, { resetCost: true });
+    updateOrderTotal();
   };
 
-  // Agregar primer ítem
-  addItemRow();
+  // Agregar un bloque de producto (con una fila de variante inicial)
+  const addProductBlock = () => {
+    const pidx = blockIndex++;
+    document.getElementById('order-items-container').insertAdjacentHTML('beforeend', `
+      <div class="card order-product-block" data-pidx="${pidx}" style="cursor:default;padding:14px;margin-bottom:10px">
+        <div class="form-row" style="gap:8px;margin-bottom:10px">
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <select class="op-product" data-pidx="${pidx}">
+              <option value="">Seleccionar producto...</option>
+              ${productOptions()}
+              <option value="__new__">＋ Crear producto nuevo...</option>
+            </select>
+          </div>
+          <button type="button" class="remove-variant op-remove-block" data-pidx="${pidx}" title="Quitar producto" style="margin-bottom:0">&times;</button>
+        </div>
+        <div class="op-variants" data-pidx="${pidx}"></div>
+        <button type="button" class="btn btn-outline btn-sm btn-full mt-8 op-add-variant" data-pidx="${pidx}">+ Agregar talla/color</button>
+      </div>
+    `);
+    addVariantRow(pidx);
+  };
 
-  document.getElementById('add-order-item').addEventListener('click', addItemRow);
+  // Primer bloque
+  addProductBlock();
 
-  // Resolver variante desde talla+color
-  function resolveVariant(idx) {
-    const productId = document.querySelector(`.oi-product[data-idx="${idx}"]`)?.value;
-    const size = document.querySelector(`.oi-size[data-idx="${idx}"]`)?.value;
-    const color = document.querySelector(`.oi-color[data-idx="${idx}"]`)?.value;
-    const hiddenInput = document.querySelector(`.oi-variant[data-idx="${idx}"]`);
-    if (!productId || !size || !color) { hiddenInput.value = ''; return; }
-    const product = productsList.find(p => p.id === productId);
-    const variant = (product?.product_variants || []).find(v => v.size === size && v.color === color);
-    hiddenInput.value = variant ? variant.id : '';
-  }
+  document.getElementById('add-order-item').addEventListener('click', addProductBlock);
 
-  // Delegated events para los ítems
+  // Delegated events para los bloques de producto
   document.getElementById('order-items-container').addEventListener('change', (e) => {
-    if (e.target.classList.contains('oi-product')) {
-      const idx = e.target.dataset.idx;
+    // Cambio de producto del bloque
+    if (e.target.classList.contains('op-product')) {
+      const pidx = e.target.dataset.pidx;
       const productId = e.target.value;
-      const sizeSelect = document.querySelector(`.oi-size[data-idx="${idx}"]`);
-      const colorSelect = document.querySelector(`.oi-color[data-idx="${idx}"]`);
-      const costInput = document.querySelector(`.oi-cost[data-idx="${idx}"]`);
 
       // Crear producto nuevo inline — se apila encima del formulario de pedido
       // para no perder lo capturado; al volver se actualizan los dropdowns.
@@ -397,17 +445,17 @@ async function openNewOrderForm(container, sb) {
           productsList = refreshed || [];
 
           // Refrescar las opciones de todos los selects de producto, preservando
-          // la selección actual de cada fila.
-          document.querySelectorAll('.oi-product').forEach((sel) => {
+          // la selección actual de cada bloque.
+          document.querySelectorAll('.op-product').forEach((sel) => {
             const current = sel.value;
             sel.innerHTML = `<option value="">Seleccionar producto...</option>`
-              + productsList.map(p => `<option value="${p.id}" data-cost="${p.cost}">${p.name} ($${p.cost} c/u)</option>`).join('')
+              + productOptions()
               + `<option value="__new__">＋ Crear producto nuevo...</option>`;
             sel.value = current;
           });
 
-          // Pre-seleccionar el producto recién creado en esta misma fila.
-          const thisSelect = document.querySelector(`.oi-product[data-idx="${idx}"]`);
+          // Pre-seleccionar el producto recién creado en este bloque.
+          const thisSelect = document.querySelector(`.op-product[data-pidx="${pidx}"]`);
           if (thisSelect && newProduct) {
             thisSelect.value = newProduct.id;
             thisSelect.dispatchEvent(new Event('change', { bubbles: true }));
@@ -417,37 +465,23 @@ async function openNewOrderForm(container, sb) {
         return;
       }
 
-      if (!productId) {
-        sizeSelect.innerHTML = '<option value="">—</option>';
-        sizeSelect.disabled = true;
-        colorSelect.innerHTML = '<option value="">—</option>';
-        colorSelect.disabled = true;
-        return;
-      }
-
-      const product = productsList.find(p => p.id === productId);
-      costInput.value = product.cost;
-
-      const sizes = [...new Set((product.product_variants || []).map(v => v.size))];
-      const colors = [...new Set((product.product_variants || []).map(v => v.color))];
-
-      sizeSelect.innerHTML = sizes.map(s => `<option value="${s}">${s}</option>`).join('')
-        + '<option value="__new_size__">+ Nueva talla...</option>';
-      sizeSelect.disabled = false;
-      colorSelect.innerHTML = colors.map(c => `<option value="${c}">${c}</option>`).join('')
-        + '<option value="__new_color__">+ Nuevo color...</option>';
-      colorSelect.disabled = false;
-
-      resolveVariant(idx);
+      const product = productId ? productsList.find(p => p.id === productId) : null;
+      // Reconstruir las opciones de talla/color de todas las filas del bloque.
+      document.querySelectorAll(`.op-variants[data-pidx="${pidx}"] .ov-row`).forEach((row) => {
+        row.querySelector('.ov-size').value = '';
+        row.querySelector('.ov-color').value = '';
+        fillRowOptions(row, product, { resetCost: true });
+      });
       updateOrderTotal();
+      return;
     }
 
-    // Nueva talla
-    if (e.target.classList.contains('oi-size') && e.target.value === '__new_size__') {
-      const idx = e.target.dataset.idx;
-      const productId = document.querySelector(`.oi-product[data-idx="${idx}"]`)?.value;
-      const product = productsList.find(p => p.id === productId);
-      if (!product) return;
+    // Nueva talla (a nivel del producto del bloque)
+    if (e.target.classList.contains('ov-size') && e.target.value === '__new_size__') {
+      const triggerRow = e.target.closest('.ov-row');
+      const pidx = triggerRow.dataset.pidx;
+      const product = getProduct(pidx);
+      if (!product) { e.target.value = ''; return; }
 
       const existingSizes = [...new Set((product.product_variants || []).map(v => v.size))];
       const ALL_SIZES = ['única', 'N/A', '0-3', '3-6', '6-9', '9-12', '12-18', '18-24'];
@@ -529,28 +563,24 @@ async function openNewOrderForm(container, sb) {
           UI.closeSheet();
           UI.toast(`Talla ${selectedSize} agregada`);
 
-          // Refrescar dropdowns del ítem
-          const sizeSelect = document.querySelector(`.oi-size[data-idx="${idx}"]`);
-          const colorSelect = document.querySelector(`.oi-color[data-idx="${idx}"]`);
-          const sizes = [...new Set(product.product_variants.map(v => v.size))];
-          const colors = [...new Set(product.product_variants.map(v => v.color))];
-          sizeSelect.innerHTML = sizes.map(s => `<option value="${s}">${s}</option>`).join('')
-            + '<option value="__new_size__">+ Nueva talla...</option>';
-          colorSelect.innerHTML = colors.map(c => `<option value="${c}">${c}</option>`).join('')
-            + '<option value="__new_color__">+ Nuevo color...</option>';
-          sizeSelect.value = selectedSize;
-          resolveVariant(idx);
+          // Refrescar talla/color de TODAS las filas del bloque (preservando selección)
+          document.querySelectorAll(`.op-variants[data-pidx="${pidx}"] .ov-row`)
+            .forEach((r) => fillRowOptions(r, product));
+          // Seleccionar la talla nueva en la fila que la disparó
+          triggerRow.querySelector('.ov-size').value = selectedSize;
+          resolveVariant(triggerRow);
+          updateOrderTotal();
         });
       });
       return;
     }
 
-    // Nuevo color
-    if (e.target.classList.contains('oi-color') && e.target.value === '__new_color__') {
-      const idx = e.target.dataset.idx;
-      const productId = document.querySelector(`.oi-product[data-idx="${idx}"]`)?.value;
-      const product = productsList.find(p => p.id === productId);
-      if (!product) return;
+    // Nuevo color (a nivel del producto del bloque)
+    if (e.target.classList.contains('ov-color') && e.target.value === '__new_color__') {
+      const triggerRow = e.target.closest('.ov-row');
+      const pidx = triggerRow.dataset.pidx;
+      const product = getProduct(pidx);
+      if (!product) { e.target.value = ''; return; }
 
       const existingColors = [...new Set((product.product_variants || []).map(v => v.color))];
       e.target.value = existingColors[0] || '';
@@ -589,60 +619,52 @@ async function openNewOrderForm(container, sb) {
           UI.closeSheet();
           UI.toast(`Color ${colorName} agregado`);
 
-          // Refrescar dropdowns del ítem
-          const sizeSelect = document.querySelector(`.oi-size[data-idx="${idx}"]`);
-          const colorSelect = document.querySelector(`.oi-color[data-idx="${idx}"]`);
-          const sizes = [...new Set(product.product_variants.map(v => v.size))];
-          const colors = [...new Set(product.product_variants.map(v => v.color))];
-          sizeSelect.innerHTML = sizes.map(s => `<option value="${s}">${s}</option>`).join('')
-            + '<option value="__new_size__">+ Nueva talla...</option>';
-          colorSelect.innerHTML = colors.map(c => `<option value="${c}">${c}</option>`).join('')
-            + '<option value="__new_color__">+ Nuevo color...</option>';
-          colorSelect.value = colorName;
-          resolveVariant(idx);
+          // Refrescar talla/color de TODAS las filas del bloque (preservando selección)
+          document.querySelectorAll(`.op-variants[data-pidx="${pidx}"] .ov-row`)
+            .forEach((r) => fillRowOptions(r, product));
+          // Seleccionar el color nuevo en la fila que lo disparó
+          triggerRow.querySelector('.ov-color').value = colorName;
+          resolveVariant(triggerRow);
+          updateOrderTotal();
         });
       });
       return;
     }
 
-    if (e.target.classList.contains('oi-size') || e.target.classList.contains('oi-color')) {
-      resolveVariant(e.target.dataset.idx);
+    if (e.target.classList.contains('ov-size') || e.target.classList.contains('ov-color')) {
+      resolveVariant(e.target.closest('.ov-row'));
     }
   });
 
   document.getElementById('order-items-container').addEventListener('input', (e) => {
-    if (e.target.classList.contains('oi-qty') || e.target.classList.contains('oi-cost')) {
+    if (e.target.classList.contains('ov-qty') || e.target.classList.contains('ov-cost')) {
       updateOrderTotal();
     }
   });
 
   document.getElementById('order-items-container').addEventListener('click', (e) => {
-    if (e.target.classList.contains('oi-remove')) {
-      const row = e.target.closest('.order-item-row');
-      if (document.querySelectorAll('.order-item-row').length > 1) {
+    // Agregar otra talla/color al mismo producto
+    if (e.target.classList.contains('op-add-variant')) {
+      addVariantRow(e.target.dataset.pidx);
+      return;
+    }
+    // Quitar una fila de talla/color (deja al menos una por bloque)
+    if (e.target.classList.contains('ov-remove')) {
+      const row = e.target.closest('.ov-row');
+      const variants = row.parentElement;
+      if (variants.querySelectorAll('.ov-row').length > 1) {
         row.remove();
         updateOrderTotal();
       }
+      return;
     }
-    // Agregar otro link
-    if (e.target.closest('.oi-add-link')) {
-      const btn = e.target.closest('.oi-add-link');
-      const container = btn.closest('.oi-links-container');
-      // Insertar antes del botón "+"
-      btn.closest('.form-row').insertAdjacentHTML('beforebegin', `
-        <div class="form-row mt-8 oi-extra-link" style="gap:6px;margin-bottom:0">
-          <div class="form-group" style="flex:1;margin-bottom:0">
-            <input type="url" class="oi-source-url" placeholder="Otro link...">
-          </div>
-          <button type="button" class="btn-icon oi-remove-link" title="Quitar" style="margin-bottom:0;flex-shrink:0">
-            <svg viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
-      `);
-    }
-    // Quitar link extra
-    if (e.target.closest('.oi-remove-link')) {
-      e.target.closest('.oi-extra-link').remove();
+    // Quitar un producto completo (deja al menos un bloque)
+    if (e.target.classList.contains('op-remove-block')) {
+      const block = e.target.closest('.order-product-block');
+      if (document.querySelectorAll('.order-product-block').length > 1) {
+        block.remove();
+        updateOrderTotal();
+      }
     }
   });
 
@@ -652,9 +674,9 @@ async function openNewOrderForm(container, sb) {
   function updateOrderTotal() {
     const preview = document.getElementById('order-total-preview');
     let productTotal = 0;
-    document.querySelectorAll('.order-item-row').forEach(row => {
-      const qty = parseFloat(row.querySelector('.oi-qty')?.value) || 0;
-      const cost = parseFloat(row.querySelector('.oi-cost')?.value) || 0;
+    document.querySelectorAll('.ov-row').forEach(row => {
+      const qty = parseFloat(row.querySelector('.ov-qty')?.value) || 0;
+      const cost = parseFloat(row.querySelector('.ov-cost')?.value) || 0;
       productTotal += qty * cost;
     });
     const shipping = parseFloat(document.getElementById('no-shipping').value) || 0;
@@ -683,22 +705,26 @@ async function openNewOrderForm(container, sb) {
       const estimated_arrival = document.getElementById('no-arrival').value || null;
       const notes = document.getElementById('no-notes').value.trim() || null;
 
-      // Collect items
-      const items = [];
-      let productTotal = 0;
-      document.querySelectorAll('.order-item-row').forEach(row => {
-        const variantId = row.querySelector('.oi-variant')?.value;
-        const qty = parseInt(row.querySelector('.oi-qty')?.value) || 0;
-        const cost = parseFloat(row.querySelector('.oi-cost')?.value) || 0;
-        const links = [...row.querySelectorAll('.oi-source-url')].map(i => i.value.trim()).filter(Boolean);
-        const source_url = links.length > 0 ? links.join('\n') : null;
-        if (variantId && qty > 0) {
-          items.push({ variant_id: variantId, quantity: qty, unit_cost: cost, source_url });
-          productTotal += qty * cost;
+      // Collect items — recorre todas las filas de variante de todos los bloques.
+      // Combina filas con la misma variante (mismo producto/talla/color) sumando cantidad.
+      const itemsByVariant = new Map();
+      document.querySelectorAll('.ov-row').forEach(row => {
+        const variantId = row.querySelector('.ov-variant')?.value;
+        const qty = parseInt(row.querySelector('.ov-qty')?.value) || 0;
+        const cost = parseFloat(row.querySelector('.ov-cost')?.value) || 0;
+        if (!variantId || qty <= 0) return;
+        if (itemsByVariant.has(variantId)) {
+          const ex = itemsByVariant.get(variantId);
+          ex.quantity += qty;
+          ex.unit_cost = cost; // último costo capturado
+        } else {
+          itemsByVariant.set(variantId, { variant_id: variantId, quantity: qty, unit_cost: cost });
         }
       });
+      const items = [...itemsByVariant.values()];
+      const productTotal = items.reduce((sum, i) => sum + i.quantity * i.unit_cost, 0);
 
-      if (items.length === 0) { UI.toast('Agrega al menos un artículo', 'error'); return; }
+      if (items.length === 0) { UI.toast('Agrega al menos una talla/color', 'error'); return; }
 
       const total = productTotal + shipping_cost + taxes;
 
@@ -710,7 +736,7 @@ async function openNewOrderForm(container, sb) {
 
       for (const item of items) {
         await sb.from('purchase_order_items').insert({
-          order_id: newOrder.id, variant_id: item.variant_id, quantity: item.quantity, unit_cost: item.unit_cost, source_url: item.source_url
+          order_id: newOrder.id, variant_id: item.variant_id, quantity: item.quantity, unit_cost: item.unit_cost
         });
       }
 
