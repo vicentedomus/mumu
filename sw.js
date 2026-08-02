@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mumu-v7';
+const CACHE_NAME = 'mumu-v8';
 const ASSETS = [
   '/',
   '/index.html',
