@@ -34,6 +34,13 @@ async function renderProductList(container, sb) {
 
   const { data: locations } = await sb.from('locations').select('id, name').eq('active', true);
 
+  // Filtro de sucursal — persiste entre re-renders (ventas, traslados, ajustes)
+  let filterLocId = sessionStorage.getItem('inventory_filter_location') || '';
+  if (filterLocId && !(locations || []).some(l => l.id === filterLocId)) {
+    filterLocId = '';
+    sessionStorage.removeItem('inventory_filter_location');
+  }
+
   // En modo visita, traer las cantidades observadas para sustituir los totales mostrados
   let observedByKey = {};
   if (visitMode) {
@@ -89,33 +96,38 @@ async function renderProductList(container, sb) {
     <div class="form-group mb-16">
       <select id="filter-location">
         <option value="">Todas las ubicaciones</option>
-        ${(locations || []).map(l => `<option value="${l.id}">${l.name}</option>`).join('')}
+        ${(locations || []).map(l => `<option value="${l.id}" ${l.id === filterLocId ? 'selected' : ''}>${l.name}</option>`).join('')}
       </select>
     </div>
     <div class="form-group mb-16">
       <input type="search" id="search-products" placeholder="Buscar producto...">
     </div>
     <div id="product-list">
-      ${products.map(p => {
-        const stockByLocId = {};
-        (p.product_variants || []).forEach(v => {
-          (v.inventory || []).forEach(inv => {
-            stockByLocId[inv.location_id] = (stockByLocId[inv.location_id] || 0) + getQty(v.id, inv.location_id, inv.quantity);
-          });
-        });
-        return `
-        <div class="swipeable-item" data-product-id="${p.id}" data-product-name="${p.name}" data-name="${p.name.toLowerCase()}" data-stock-by-locid='${JSON.stringify(stockByLocId)}'>
-          <div class="swipeable-delete" aria-label="Eliminar">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            <span>Eliminar</span>
-          </div>
-          <div class="swipeable-content">
-            ${renderProductCard(p, getQty)}
-          </div>
-        </div>
-      `; }).join('')}
+      ${renderProductItems()}
     </div>
   `;
+
+  // Items de la lista — se re-generan al cambiar el filtro de ubicación
+  function renderProductItems() {
+    return products.map(p => {
+      const stockByLocId = {};
+      (p.product_variants || []).forEach(v => {
+        (v.inventory || []).forEach(inv => {
+          stockByLocId[inv.location_id] = (stockByLocId[inv.location_id] || 0) + getQty(v.id, inv.location_id, inv.quantity);
+        });
+      });
+      return `
+      <div class="swipeable-item" data-product-id="${p.id}" data-product-name="${p.name}" data-name="${p.name.toLowerCase()}" data-stock-by-locid='${JSON.stringify(stockByLocId)}'>
+        <div class="swipeable-delete" aria-label="Eliminar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          <span>Eliminar</span>
+        </div>
+        <div class="swipeable-content">
+          ${renderProductCard(p, getQty, filterLocId)}
+        </div>
+      </div>
+    `; }).join('');
+  }
 
   // FAB para agregar producto
   addFAB(() => openProductForm(null, container, sb));
@@ -151,21 +163,30 @@ async function renderProductList(container, sb) {
   // Búsqueda
   document.getElementById('search-products').addEventListener('input', applyProductFilters);
 
-  // Filtro por ubicación
-  document.getElementById('filter-location').addEventListener('change', applyProductFilters);
-
-  // Click en producto → detalle
-  document.querySelectorAll('.product-card').forEach(card => {
-    card.addEventListener('click', () => {
-      const item = card.closest('.swipeable-item');
-      if (item && item.classList.contains('swiped')) return; // no abrir si está en swipe
-      const product = products.find(p => p.id === card.dataset.id);
-      if (product) openProductDetail(product, container, sb);
-    });
+  // Filtro por ubicación — re-genera las tarjetas para mostrar solo el stock de esa sucursal
+  document.getElementById('filter-location').addEventListener('change', (e) => {
+    filterLocId = e.target.value;
+    if (filterLocId) sessionStorage.setItem('inventory_filter_location', filterLocId);
+    else sessionStorage.removeItem('inventory_filter_location');
+    document.getElementById('product-list').innerHTML = renderProductItems();
+    bindProductItems();
+    applyProductFilters();
   });
 
-  // Swipe-to-delete para productos
-  initSwipeToDelete(container, async (item) => {
+  // Click en producto → detalle (se re-enlaza al cambiar el filtro)
+  function bindProductItems() {
+    document.querySelectorAll('.product-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const item = card.closest('.swipeable-item');
+        if (item && item.classList.contains('swiped')) return; // no abrir si está en swipe
+        const product = products.find(p => p.id === card.dataset.id);
+        if (product) openProductDetail(product, container, sb, filterLocId);
+      });
+    });
+    initSwipeToDelete(container, onDeleteProduct);
+  }
+
+  async function onDeleteProduct(item) {
     const productId = item.dataset.productId;
     const productName = item.dataset.productName;
     const product = products.find(p => p.id === productId);
@@ -188,21 +209,30 @@ async function renderProductList(container, sb) {
 
     UI.toast(`"${productName}" eliminado`);
     return true;
-  });
+  }
 
+  bindProductItems();
+  applyProductFilters();
 }
 
-function renderProductCard(p, getQty) {
+function renderProductCard(p, getQty, filterLocId) {
   const qtyOf = getQty || ((_v, _l, real) => real);
-  const totalStock = (p.product_variants || []).reduce((sum, v) =>
-    sum + (v.inventory || []).reduce((s, i) => s + qtyOf(v.id, i.location_id, i.quantity), 0), 0);
-  const variants = (p.product_variants || []).length;
-  const colors = [...new Set((p.product_variants || []).map(v => v.color))];
+  // Con filtro de sucursal, solo cuentan las unidades de esa ubicación
+  const inFilter = (inv) => !filterLocId || inv.location_id === filterLocId;
+  const variantStock = (v) => (v.inventory || [])
+    .reduce((s, i) => s + (inFilter(i) ? qtyOf(v.id, i.location_id, i.quantity) : 0), 0);
+
+  const allVariants = p.product_variants || [];
+  const shownVariants = filterLocId ? allVariants.filter(v => variantStock(v) > 0) : allVariants;
+  const totalStock = shownVariants.reduce((sum, v) => sum + variantStock(v), 0);
+  const variants = shownVariants.length;
+  const colors = [...new Set(shownVariants.map(v => v.color))];
 
   // Stock por ubicación
   const stockByLoc = {};
-  (p.product_variants || []).forEach(v => {
+  allVariants.forEach(v => {
     (v.inventory || []).forEach(inv => {
+      if (!inFilter(inv)) return;
       const locName = inv.locations?.name || '?';
       stockByLoc[locName] = (stockByLoc[locName] || 0) + qtyOf(v.id, inv.location_id, inv.quantity);
     });
@@ -672,7 +702,7 @@ async function openProductForm(product, container, sb) {
 // ============================================
 // Detalle de producto — tabla de variantes
 // ============================================
-async function openProductDetail(product, container, sb) {
+async function openProductDetail(product, container, sb, filterLocId = '') {
   const { data: variants } = await sb
     .from('product_variants')
     .select('id, size, color, sku, inventory ( quantity, location_id, locations ( name, type ) )')
@@ -681,26 +711,36 @@ async function openProductDetail(product, container, sb) {
 
   const { data: locations } = await sb.from('locations').select('id, name, type, commission_rate').eq('active', true);
 
+  // Sucursal filtrada: se muestran solo sus unidades. Sin filtro, todas las ubicaciones.
+  const filterLoc = (locations || []).find(l => l.id === filterLocId) || null;
+  const shownLocations = filterLoc ? [filterLoc] : (locations || []);
+
   const margin = product.sale_price - product.cost;
   const marginPct = product.cost > 0 ? Math.round((margin / product.cost) * 100) : 0;
 
   // Preparar datos de variantes
-  const variantData = (variants || []).map(v => {
+  const allVariantData = (variants || []).map(v => {
     const stockByLoc = {};
     let total = 0;
     (v.inventory || []).forEach(inv => {
+      if (filterLoc && inv.location_id !== filterLoc.id) return;
       stockByLoc[inv.locations?.name || '?'] = inv.quantity;
       total += inv.quantity;
     });
     return { ...v, stockByLoc, total };
   });
 
+  // Con filtro, se ocultan las variantes sin stock en esa sucursal
+  const variantData = filterLoc ? allVariantData.filter(v => v.total > 0) : allVariantData;
+  const hiddenVariants = allVariantData.length - variantData.length;
+
   const totalStock = variantData.reduce((s, v) => s + v.total, 0);
 
   const html = `
     ${product.image_url ? `<div style="text-align:center;margin-bottom:16px"><img src="${product.image_url}" alt="" class="product-detail-img" id="product-thumb-img" style="cursor:pointer"></div>` : ''}
     <div class="mb-16">
-      <div class="text-sm text-muted">${product.code} · ${variantData.length} variantes · ${totalStock} uds total</div>
+      <div class="text-sm text-muted">${product.code} · ${variantData.length} variantes · ${totalStock} uds ${filterLoc ? `en ${filterLoc.name}` : 'total'}</div>
+      ${filterLoc ? `<div class="text-sm text-muted mt-8">Filtrado por <strong>${filterLoc.name}</strong>${hiddenVariants > 0 ? ` · ${hiddenVariants} variante${hiddenVariants !== 1 ? 's' : ''} sin stock aquí` : ''}</div>` : ''}
       <div class="text-sm mt-8">Costo: <strong>$${product.cost}</strong> · Venta: <strong>$${product.sale_price}</strong> · <span class="text-success">Margen: $${margin} (${marginPct}%)</span></div>
       <div class="flex gap-8 mt-8">
         <button class="btn btn-sm btn-outline" id="edit-product-btn">Editar</button>
@@ -721,7 +761,7 @@ async function openProductDetail(product, container, sb) {
     </div>
 
     <div id="variants-table-container">
-      ${renderVariantsTable(variantData, locations)}
+      ${renderVariantsTable(variantData, shownLocations)}
     </div>
 
     <div class="section-divider mt-16 mb-8"><span class="section-label">Movimientos recientes</span></div>
@@ -741,8 +781,8 @@ async function openProductDetail(product, container, sb) {
       filtered = filtered.filter(v => v.color.toLowerCase().includes(q) || v.size.toLowerCase().includes(q) || v.sku.toLowerCase().includes(q));
     }
     filtered = sortVariants(filtered, currentSort);
-    document.getElementById('variants-table-container').innerHTML = renderVariantsTable(filtered, locations);
-    bindVariantActions(body, locations, product, variantData, container, sb);
+    document.getElementById('variants-table-container').innerHTML = renderVariantsTable(filtered, shownLocations);
+    bindVariantActions(body, locations, product, variantData, container, sb, filterLocId);
   }
 
   document.getElementById('variant-search').addEventListener('input', (e) => {
@@ -773,7 +813,7 @@ async function openProductDetail(product, container, sb) {
   });
 
   // Bind acciones iniciales
-  bindVariantActions(body, locations, product, variantData, container, sb);
+  bindVariantActions(body, locations, product, variantData, container, sb, filterLocId);
 
   // Lightbox para imagen de producto
   const thumbImg = document.getElementById('product-thumb-img');
@@ -849,7 +889,8 @@ function renderVariantsTable(variants, locations) {
       }).join('')}
     </div>`;
 
-  // Desktop: table layout (unchanged)
+  // Desktop: table layout — con una sola ubicación, la columna Total ya la representa
+  const showLocCols = locations.length > 1;
   const desktopHtml = `
     <div class="desktop-only" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
       <table class="variants-table">
@@ -857,8 +898,8 @@ function renderVariantsTable(variants, locations) {
           <tr>
             <th>Color</th>
             <th>Talla</th>
-            ${locations.map(l => `<th style="text-align:center">${l.name}</th>`).join('')}
-            <th style="text-align:center">Total</th>
+            ${showLocCols ? locations.map(l => `<th style="text-align:center">${l.name}</th>`).join('') : ''}
+            <th style="text-align:center">${showLocCols ? 'Total' : (locations[0]?.name || 'Total')}</th>
             <th></th>
           </tr>
         </thead>
@@ -869,10 +910,10 @@ function renderVariantsTable(variants, locations) {
               <tr class="variant-row-table" data-variant-id="${v.id}">
                 <td><strong>${v.color}</strong></td>
                 <td>${v.size}</td>
-                ${locations.map(l => {
+                ${showLocCols ? locations.map(l => {
                   const qty = v.stockByLoc[l.name] || 0;
                   return `<td style="text-align:center"><span class="${qty === 0 ? 'text-muted' : ''}">${qty}</span></td>`;
-                }).join('')}
+                }).join('') : ''}
                 <td style="text-align:center"><span class="badge ${badgeClass}" style="font-size:0.68rem">${v.total}</span></td>
                 <td>
                   <div class="variant-btns-inline" style="display:flex">
@@ -897,7 +938,7 @@ function renderVariantsTable(variants, locations) {
   return mobileHtml + desktopHtml;
 }
 
-function bindVariantActions(body, locations, product, variants, container, sb) {
+function bindVariantActions(body, locations, product, variants, container, sb, filterLocId = '') {
   body.querySelectorAll('.action-add-stock').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -907,13 +948,13 @@ function bindVariantActions(body, locations, product, variants, container, sb) {
   body.querySelectorAll('.action-transfer').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      openTransferForm(btn.dataset.variantId, locations, product, variants, container, sb);
+      openTransferForm(btn.dataset.variantId, locations, product, variants, container, sb, filterLocId);
     });
   });
   body.querySelectorAll('.action-sell').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      openQuickSaleForm(btn.dataset.variantId, locations, product, variants, container, sb);
+      openQuickSaleForm(btn.dataset.variantId, locations, product, variants, container, sb, filterLocId);
     });
   });
 }
@@ -1100,9 +1141,13 @@ function openAddStockForm(variantId, locations, product, variants, container, sb
 // ============================================
 // Trasladar stock
 // ============================================
-function openTransferForm(variantId, locations, product, variants, container, sb) {
+function openTransferForm(variantId, locations, product, variants, container, sb, filterLocId = '') {
   UI.closeSheet();
   const variant = variants.find(v => v.id === variantId);
+
+  // Con filtro activo, el origen por defecto es la sucursal filtrada
+  const defaultFromId = locations.some(l => l.id === filterLocId) ? filterLocId : locations[0]?.id;
+  const defaultToId = (locations.find(l => l.id !== defaultFromId) || {}).id;
 
   const html = `
     <form id="transfer-form">
@@ -1111,13 +1156,13 @@ function openTransferForm(variantId, locations, product, variants, container, sb
         <div class="form-group" style="flex:1">
           <label>Desde</label>
           <select id="tf-from" required>
-            ${locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('')}
+            ${locations.map(l => `<option value="${l.id}" ${l.id === defaultFromId ? 'selected' : ''}>${l.name}</option>`).join('')}
           </select>
         </div>
         <div class="form-group" style="flex:1">
           <label>Hacia</label>
           <select id="tf-to" required>
-            ${locations.map((l, i) => `<option value="${l.id}" ${i === 1 ? 'selected' : ''}>${l.name}</option>`).join('')}
+            ${locations.map(l => `<option value="${l.id}" ${l.id === defaultToId ? 'selected' : ''}>${l.name}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -1178,10 +1223,12 @@ function openTransferForm(variantId, locations, product, variants, container, sb
 // ============================================
 // Venta rápida desde inventario
 // ============================================
-function openQuickSaleForm(variantId, locations, product, variants, container, sb) {
+function openQuickSaleForm(variantId, locations, product, variants, container, sb, filterLocId = '') {
   UI.closeSheet();
   const variant = variants.find(v => v.id === variantId);
   const today = todayLocalISO();
+  // Con filtro activo, se vende desde la sucursal filtrada por defecto
+  const defaultSaleLocId = locations.some(l => l.id === filterLocId) ? filterLocId : locations[0]?.id;
 
   const html = `
     <form id="sale-form">
@@ -1189,7 +1236,7 @@ function openQuickSaleForm(variantId, locations, product, variants, container, s
       <div class="form-group">
         <label>Ubicación de venta</label>
         <select id="sf-location" required>
-          ${locations.map(l => `<option value="${l.id}">${l.name}${l.commission_rate > 0 ? ` (${l.commission_rate}% comisión)` : ''}</option>`).join('')}
+          ${locations.map(l => `<option value="${l.id}" ${l.id === defaultSaleLocId ? 'selected' : ''}>${l.name}${l.commission_rate > 0 ? ` (${l.commission_rate}% comisión)` : ''}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
