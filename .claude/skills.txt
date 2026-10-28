@@ -1,0 +1,7 @@
+# Skills COMPARTIDAS que este repo materializa en .claude/skills/ al inicio de
+# sesión, desde el repo central vicentedomus/claude-skills (carpeta por skill).
+# Una por línea. Las líneas en blanco y las que empiezan con # se ignoran.
+# Es el ÚNICO knob per-repo: lo que no esté aquí no existe en disco y no carga.
+huashu-design
+ui-ux-pro-max
+huashu-max

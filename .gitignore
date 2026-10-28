@@ -8,3 +8,9 @@ package-lock.json
 playwright.config.js
 tests/
 test-results/
+
+# Claude Code: skills COMPARTIDAS materializadas por .claude/hooks/sync-skills.sh
+# en cada sesión desde vicentedomus/claude-skills (ver .claude/skills.txt).
+# No se comitean: skills.txt es el único knob per-repo.
+.claude/skills/
+.claude/settings.local.json
