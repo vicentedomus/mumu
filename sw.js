@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mumu-v8';
+const CACHE_NAME = 'mumu-v9';
 const ASSETS = [
   '/',
   '/index.html',
@@ -8,11 +8,13 @@ const ASSETS = [
   '/js/router.js',
   '/js/auth.js',
   '/js/supabase-client.js',
+  '/js/locations.js',
   '/js/pages/inventory.js',
   '/js/pages/dashboard.js',
   '/js/pages/sales.js',
   '/js/pages/orders.js',
   '/js/pages/reports.js',
+  '/js/pages/locations.js',
   '/assets/logo.svg',
   '/manifest.json'
 ];

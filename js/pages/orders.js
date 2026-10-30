@@ -126,7 +126,7 @@ async function openOrderDetail(order, container, sb) {
   } else if (order.status === 'in_transit') {
     actionsHTML = `
       <button class="btn btn-primary btn-full mb-8" id="od-received">Marcar como recibido</button>
-      <p class="text-sm text-muted mt-8" style="text-align:center">Al recibir se agregará el stock a ${order.destination_location?.name || 'Casa'}</p>
+      <p class="text-sm text-muted mt-8" style="text-align:center">Al recibir se agregará el stock a ${escapeHtml(order.destination_location?.name || 'la ubicación principal')}</p>
     `;
   }
 
@@ -199,13 +199,13 @@ async function openOrderDetail(order, container, sb) {
     btnReceived.addEventListener('click', async () => {
       // Determinar ubicación destino
       let destLocId = order.destination_location_id;
-      let destLocName = order.destination_location?.name || 'Casa';
+      let destLocName = order.destination_location?.name;
       if (!destLocId) {
-        // Fallback a Casa si no se guardó destino
-        const { data: casaLoc } = await sb.from('locations').select('id').eq('name', 'Casa').single();
-        if (!casaLoc) { UI.toast('No se encontró ubicación', 'error'); return; }
-        destLocId = casaLoc.id;
-        destLocName = 'Casa';
+        // Fallback a la ubicación principal si no se guardó destino
+        const defaultLoc = await Locations.getDefault(sb);
+        if (!defaultLoc) { UI.toast('No se encontró ubicación', 'error'); return; }
+        destLocId = defaultLoc.id;
+        destLocName = defaultLoc.name;
       }
 
       const ok = await UI.confirm(`¿Marcar como recibido? Se agregarán las unidades al stock de ${destLocName}.`);
@@ -255,7 +255,8 @@ async function openNewOrderForm(container, sb) {
     .eq('product_variants.active', true)
     .order('name');
 
-  const { data: locations } = await sb.from('locations').select('id, name').eq('active', true);
+  const locations = await Locations.active(sb);
+  const defaultLoc = Locations.pickDefault(locations);
 
   const html = `
     <form id="new-order-form">
@@ -267,7 +268,7 @@ async function openNewOrderForm(container, sb) {
         <div class="form-group" style="flex:1">
           <label>Destino</label>
           <select id="no-destination">
-            ${(locations || []).map(l => `<option value="${l.id}">${l.name}</option>`).join('')}
+            ${locations.map(l => `<option value="${l.id}" ${l.id === defaultLoc?.id ? 'selected' : ''}>${escapeHtml(l.name)}</option>`).join('')}
           </select>
         </div>
       </div>

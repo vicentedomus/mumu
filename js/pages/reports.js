@@ -31,8 +31,8 @@ async function renderReports(container, sb, period) {
       .gte('created_at', start.toISOString()).lte('created_at', end.toISOString()),
     sb.from('purchase_orders').select('id, total, shipping_cost, taxes, status, created_at')
       .gte('created_at', prevStart.toISOString()).lte('created_at', prevEnd.toISOString()),
-    sb.from('inventory').select('quantity, location_id, product_variants(color, size, products(name)), locations(name, type)'),
-    sb.from('locations').select('id, name, type, commission_rate').eq('active', true)
+    sb.from('inventory').select('quantity, location_id, product_variants(color, size, products(name))'),
+    Locations.all(sb).then(data => ({ data }))
   ]);
 
   const sc = salesCurrent || [];
@@ -75,24 +75,30 @@ async function renderReports(container, sb, period) {
   // ===== Ventas por ubicación =====
   const locationMap = {};
   sc.forEach(s => {
-    const locName = s.locations?.name || '?';
-    if (!locationMap[locName]) locationMap[locName] = { qty: 0, revenue: 0, commission: 0 };
-    locationMap[locName].qty += s.quantity;
-    locationMap[locName].revenue += s.unit_price * s.quantity;
-    locationMap[locName].commission += s.commission_amount || 0;
+    const key = s.location_id || '?';
+    if (!locationMap[key]) locationMap[key] = { name: s.locations?.name || '?', qty: 0, revenue: 0, commission: 0 };
+    locationMap[key].qty += s.quantity;
+    locationMap[key].revenue += s.unit_price * s.quantity;
+    locationMap[key].commission += s.commission_amount || 0;
   });
+  // En el orden configurado de ubicaciones
+  const locOrder = Object.fromEntries((locations || []).map((l, i) => [l.id, i]));
+  const locationSales = Object.entries(locationMap)
+    .sort(([a], [b]) => (locOrder[a] ?? Infinity) - (locOrder[b] ?? Infinity))
+    .map(([, d]) => d);
 
   // ===== Ventas por semana (gráfica de barras) =====
   const weeklyData = getWeeklyData(sc, start, end);
 
   // ===== Consignación =====
-  const consignLocs = (locations || []).filter(l => l.type === 'consignacion');
+  // Activas, más las inactivas que aún tengan ventas en el período (todavía deben dinero)
+  const consignLocs = (locations || []).filter(l => l.type === 'consignacion' && (l.active || locationMap[l.id]));
   const consignData = consignLocs.map(loc => {
-    const stockItems = (inventory || []).filter(i => i.locations?.name === loc.name && i.quantity > 0);
+    const stockItems = (inventory || []).filter(i => i.location_id === loc.id && i.quantity > 0);
     const totalUnits = stockItems.reduce((s, i) => s + i.quantity, 0);
-    const locSales = locationMap[loc.name] || { qty: 0, revenue: 0, commission: 0 };
+    const locSales = locationMap[loc.id] || { qty: 0, revenue: 0, commission: 0 };
     const netOwed = locSales.revenue - locSales.commission;
-    return { name: loc.name, rate: loc.commission_rate, unitsInStore: totalUnits, sold: locSales.qty, revenue: locSales.revenue, commission: locSales.commission, netOwed };
+    return { name: Locations.label(loc), rate: loc.commission_rate, unitsInStore: totalUnits, sold: locSales.qty, revenue: locSales.revenue, commission: locSales.commission, netOwed };
   });
 
   // ===== RENDER =====
@@ -181,15 +187,15 @@ async function renderReports(container, sb, period) {
     <!-- Ventas por ubicación -->
     <div class="card" style="cursor:default">
       <div class="card-title">Ventas por ubicación</div>
-      ${Object.entries(locationMap).length === 0
+      ${locationSales.length === 0
         ? '<p class="text-sm text-muted">Sin ventas</p>'
-        : Object.entries(locationMap).map(([name, d]) => {
-          const maxRev = Math.max(...Object.values(locationMap).map(x => x.revenue), 1);
+        : locationSales.map(d => {
+          const maxRev = Math.max(...locationSales.map(x => x.revenue), 1);
           const pct = (d.revenue / maxRev) * 100;
           const net = d.revenue - d.commission;
           return `
             <div class="chart-h-bar">
-              <div class="chart-h-bar-label">${name}</div>
+              <div class="chart-h-bar-label">${escapeHtml(d.name)}</div>
               <div class="chart-h-bar-track">
                 <div class="chart-h-bar-fill" style="width:${Math.max(pct, 10)}%;background:var(--sage)">${d.qty}u</div>
               </div>
@@ -207,7 +213,7 @@ async function renderReports(container, sb, period) {
         ${consignData.map(c => `
           <div style="margin-bottom:16px">
             <div class="flex-between mb-8">
-              <strong>${c.name}</strong>
+              <strong>${escapeHtml(c.name)}</strong>
               <span class="badge badge-consign">${c.rate}% comisión</span>
             </div>
             <table class="consign-table">
