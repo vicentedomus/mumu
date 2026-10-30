@@ -20,7 +20,7 @@ async function renderProductList(container, sb) {
       id, code, name, cost, sale_price, product_url, image_url,
       product_variants (
         id, size, color, sku,
-        inventory ( quantity, location_id, locations ( name ) )
+        inventory ( quantity, location_id )
       )
     `)
     .eq('active', true)
@@ -32,11 +32,11 @@ async function renderProductList(container, sb) {
     return;
   }
 
-  const { data: locations } = await sb.from('locations').select('id, name').eq('active', true);
+  const locations = await Locations.active(sb);
 
   // Filtro de sucursal — persiste entre re-renders (ventas, traslados, ajustes)
   let filterLocId = sessionStorage.getItem('inventory_filter_location') || '';
-  if (filterLocId && !(locations || []).some(l => l.id === filterLocId)) {
+  if (filterLocId && !locations.some(l => l.id === filterLocId)) {
     filterLocId = '';
     sessionStorage.removeItem('inventory_filter_location');
   }
@@ -96,7 +96,7 @@ async function renderProductList(container, sb) {
     <div class="form-group mb-16">
       <select id="filter-location">
         <option value="">Todas las ubicaciones</option>
-        ${(locations || []).map(l => `<option value="${l.id}" ${l.id === filterLocId ? 'selected' : ''}>${l.name}</option>`).join('')}
+        ${locations.map(l => `<option value="${l.id}" ${l.id === filterLocId ? 'selected' : ''}>${escapeHtml(l.name)}</option>`).join('')}
       </select>
     </div>
     <div class="form-group mb-16">
@@ -123,7 +123,7 @@ async function renderProductList(container, sb) {
           <span>Eliminar</span>
         </div>
         <div class="swipeable-content">
-          ${renderProductCard(p, getQty, filterLocId)}
+          ${renderProductCard(p, locations, getQty, filterLocId)}
         </div>
       </div>
     `; }).join('');
@@ -215,7 +215,7 @@ async function renderProductList(container, sb) {
   applyProductFilters();
 }
 
-function renderProductCard(p, getQty, filterLocId) {
+function renderProductCard(p, locations, getQty, filterLocId) {
   const qtyOf = getQty || ((_v, _l, real) => real);
   // Con filtro de sucursal, solo cuentan las unidades de esa ubicación
   const inFilter = (inv) => !filterLocId || inv.location_id === filterLocId;
@@ -228,15 +228,15 @@ function renderProductCard(p, getQty, filterLocId) {
   const variants = shownVariants.length;
   const colors = [...new Set(shownVariants.map(v => v.color))];
 
-  // Stock por ubicación
-  const stockByLoc = {};
+  // Stock por ubicación (por id), en el orden configurado y solo ubicaciones activas
+  const stockByLocId = {};
   allVariants.forEach(v => {
     (v.inventory || []).forEach(inv => {
       if (!inFilter(inv)) return;
-      const locName = inv.locations?.name || '?';
-      stockByLoc[locName] = (stockByLoc[locName] || 0) + qtyOf(v.id, inv.location_id, inv.quantity);
+      stockByLocId[inv.location_id] = (stockByLocId[inv.location_id] || 0) + qtyOf(v.id, inv.location_id, inv.quantity);
     });
   });
+  const stockLocs = locations.filter(l => l.id in stockByLocId);
 
   return `
     <div class="card product-card" data-id="${p.id}" data-name="${p.name.toLowerCase()}">
@@ -258,12 +258,12 @@ function renderProductCard(p, getQty, filterLocId) {
           </span>
         </div>
       </div>
-      ${Object.keys(stockByLoc).length > 0 ? `
+      ${stockLocs.length > 0 ? `
         <div class="stock-locations mt-8">
-          ${Object.entries(stockByLoc).map(([loc, qty]) => `
+          ${stockLocs.map(l => `
             <div class="stock-loc-item" style="padding:6px 10px">
-              <span class="text-sm text-muted" style="font-size:0.7rem">${loc}</span>
-              <strong style="font-size:0.9rem">${qty}</strong>
+              <span class="text-sm text-muted" style="font-size:0.7rem">${escapeHtml(l.name)}</span>
+              <strong style="font-size:0.9rem">${stockByLocId[l.id]}</strong>
             </div>
           `).join('')}
         </div>
@@ -295,8 +295,9 @@ async function openProductForm(product, container, sb) {
   const isEdit = !!product;
   const title = isEdit ? 'Editar producto' : 'Nuevo producto';
 
-  // Cargar ubicaciones para stock inicial
-  const { data: locations } = await sb.from('locations').select('id, name').eq('active', true);
+  // Cargar ubicaciones para stock inicial (preseleccionada la principal)
+  const locations = await Locations.active(sb);
+  const defaultLoc = Locations.pickDefault(locations);
 
   // Extraer tallas y colores existentes
   const existingSizes = isEdit ? [...new Set((product.product_variants || []).map(v => v.size))] : [];
@@ -364,7 +365,7 @@ async function openProductForm(product, container, sb) {
       <div class="form-group mt-16">
         <label>Ubicación del stock inicial</label>
         <select id="pf-stock-location">
-          ${(locations || []).map(l => `<option value="${l.id}">${l.name}</option>`).join('')}
+          ${locations.map(l => `<option value="${l.id}" ${l.id === defaultLoc?.id ? 'selected' : ''}>${escapeHtml(l.name)}</option>`).join('')}
         </select>
       </div>
       ` : ''}
@@ -639,10 +640,9 @@ async function openProductForm(product, container, sb) {
               const input = document.querySelector(`.stock-initial-input[data-size="${size}"][data-color="${color}"]`);
               const qty = parseInt(input?.value) || 0;
               if (qty > 0) {
-                const { data: casaLoc } = await sb.from('locations').select('id').eq('name', 'Casa').single();
-                if (casaLoc) {
-                  await sb.from('inventory').insert({ variant_id: newVar.id, location_id: casaLoc.id, quantity: qty });
-                  await sb.from('inventory_movements').insert({ variant_id: newVar.id, to_location_id: casaLoc.id, quantity: qty, type: 'ingreso', notes: 'Stock inicial' });
+                if (defaultLoc) {
+                  await sb.from('inventory').insert({ variant_id: newVar.id, location_id: defaultLoc.id, quantity: qty });
+                  await sb.from('inventory_movements').insert({ variant_id: newVar.id, to_location_id: defaultLoc.id, quantity: qty, type: 'ingreso', notes: 'Stock inicial' });
                 }
               }
             }
@@ -705,15 +705,16 @@ async function openProductForm(product, container, sb) {
 async function openProductDetail(product, container, sb, filterLocId = '') {
   const { data: variants } = await sb
     .from('product_variants')
-    .select('id, size, color, sku, inventory ( quantity, location_id, locations ( name, type ) )')
+    .select('id, size, color, sku, inventory ( quantity, location_id )')
     .eq('product_id', product.id)
     .eq('active', true);
 
-  const { data: locations } = await sb.from('locations').select('id, name, type, commission_rate').eq('active', true);
+  const locations = await Locations.active(sb);
 
-  // Sucursal filtrada: se muestran solo sus unidades. Sin filtro, todas las ubicaciones.
-  const filterLoc = (locations || []).find(l => l.id === filterLocId) || null;
-  const shownLocations = filterLoc ? [filterLoc] : (locations || []);
+  // Sucursal filtrada: se muestran solo sus unidades. Sin filtro, todas las ubicaciones activas.
+  const filterLoc = locations.find(l => l.id === filterLocId) || null;
+  const shownLocations = filterLoc ? [filterLoc] : locations;
+  const shownLocIds = new Set(shownLocations.map(l => l.id));
 
   const margin = product.sale_price - product.cost;
   const marginPct = product.cost > 0 ? Math.round((margin / product.cost) * 100) : 0;
@@ -723,8 +724,8 @@ async function openProductDetail(product, container, sb, filterLocId = '') {
     const stockByLoc = {};
     let total = 0;
     (v.inventory || []).forEach(inv => {
-      if (filterLoc && inv.location_id !== filterLoc.id) return;
-      stockByLoc[inv.locations?.name || '?'] = inv.quantity;
+      if (!shownLocIds.has(inv.location_id)) return;
+      stockByLoc[inv.location_id] = inv.quantity;
       total += inv.quantity;
     });
     return { ...v, stockByLoc, total };
@@ -849,8 +850,8 @@ function renderVariantsTable(variants, locations) {
     <div class="variant-cards mobile-only">
       ${variants.map(v => {
         const badgeClass = v.total === 0 ? 'badge-low' : v.total <= 3 ? 'badge-low' : 'badge-stock';
-        const locsWithStock = locations.filter(l => (v.stockByLoc[l.name] || 0) > 0);
-        const locsWithout = locations.filter(l => (v.stockByLoc[l.name] || 0) === 0);
+        const locsWithStock = locations.filter(l => (v.stockByLoc[l.id] || 0) > 0);
+        const locsWithout = locations.filter(l => (v.stockByLoc[l.id] || 0) === 0);
         return `
           <div class="variant-card" data-variant-id="${v.id}">
             <div class="variant-card-header">
@@ -859,11 +860,11 @@ function renderVariantsTable(variants, locations) {
             </div>
             <div class="variant-card-bars">
               ${[...locsWithStock, ...locsWithout].map(l => {
-                const qty = v.stockByLoc[l.name] || 0;
+                const qty = v.stockByLoc[l.id] || 0;
                 const pct = maxStock > 0 ? Math.round((qty / maxStock) * 100) : 0;
                 return `
                   <div class="variant-bar-row">
-                    <span class="variant-bar-label">${l.name}</span>
+                    <span class="variant-bar-label">${escapeHtml(l.name)}</span>
                     <div class="variant-bar-track">
                       <div class="variant-bar-fill ${qty === 0 ? 'variant-bar-empty' : ''}" style="width:${Math.max(pct, qty > 0 ? 8 : 0)}%"></div>
                     </div>
@@ -898,8 +899,8 @@ function renderVariantsTable(variants, locations) {
           <tr>
             <th>Color</th>
             <th>Talla</th>
-            ${showLocCols ? locations.map(l => `<th style="text-align:center">${l.name}</th>`).join('') : ''}
-            <th style="text-align:center">${showLocCols ? 'Total' : (locations[0]?.name || 'Total')}</th>
+            ${showLocCols ? locations.map(l => `<th style="text-align:center">${escapeHtml(l.name)}</th>`).join('') : ''}
+            <th style="text-align:center">${showLocCols ? 'Total' : escapeHtml(locations[0]?.name || 'Total')}</th>
             <th></th>
           </tr>
         </thead>
@@ -911,7 +912,7 @@ function renderVariantsTable(variants, locations) {
                 <td><strong>${v.color}</strong></td>
                 <td>${v.size}</td>
                 ${showLocCols ? locations.map(l => {
-                  const qty = v.stockByLoc[l.name] || 0;
+                  const qty = v.stockByLoc[l.id] || 0;
                   return `<td style="text-align:center"><span class="${qty === 0 ? 'text-muted' : ''}">${qty}</span></td>`;
                 }).join('') : ''}
                 <td style="text-align:center"><span class="badge ${badgeClass}" style="font-size:0.68rem">${v.total}</span></td>
@@ -1017,9 +1018,7 @@ function openAddStockForm(variantId, locations, product, variants, container, sb
   // Stock actual por ubicación
   const stockByLoc = {};
   (variant?.inventory || []).forEach(inv => {
-    const locName = inv.locations?.name || '?';
-    const loc = locations.find(l => l.name === locName);
-    if (loc) stockByLoc[loc.id] = { name: locName, current: inv.quantity };
+    stockByLoc[inv.location_id] = { current: inv.quantity };
   });
 
   const html = `
@@ -1030,10 +1029,10 @@ function openAddStockForm(variantId, locations, product, variants, container, sb
         const current = stockByLoc[l.id]?.current || 0;
         return `
           <div class="flex-between mb-8" style="gap:8px">
-            <span class="text-sm" style="flex:1"><strong>${l.name}</strong> <span class="text-muted">(actual: ${current})</span></span>
+            <span class="text-sm" style="flex:1"><strong>${escapeHtml(l.name)}</strong> <span class="text-muted">(actual: ${current})</span></span>
             <div class="qty-stepper">
               <button type="button" class="qty-btn qty-minus" aria-label="Menos">−</button>
-              <input type="number" class="as-stock-input" data-loc-id="${l.id}" data-loc-name="${l.name}" data-current="${current}"
+              <input type="number" class="as-stock-input" data-loc-id="${l.id}" data-loc-name="${escapeHtml(l.name)}" data-current="${current}"
                 min="0" value="${current}" placeholder="0">
               <button type="button" class="qty-btn qty-plus" aria-label="Más">+</button>
             </div>
@@ -1086,7 +1085,7 @@ function openAddStockForm(variantId, locations, product, variants, container, sb
         <p class="text-sm text-secondary mb-8"><strong>${variant?.color}</strong> · ${variant?.size}</p>
         ${changes.map(ch => `
           <div class="flex-between mb-8">
-            <span class="text-sm"><strong>${ch.locName}</strong></span>
+            <span class="text-sm"><strong>${escapeHtml(ch.locName)}</strong></span>
             <span class="text-sm">${ch.current} → <strong>${ch.newQty}</strong> <span class="${ch.diff > 0 ? 'text-success' : 'text-danger'}">(${ch.diff > 0 ? '+' : ''}${ch.diff})</span></span>
           </div>
         `).join('')}
@@ -1156,13 +1155,13 @@ function openTransferForm(variantId, locations, product, variants, container, sb
         <div class="form-group" style="flex:1">
           <label>Desde</label>
           <select id="tf-from" required>
-            ${locations.map(l => `<option value="${l.id}" ${l.id === defaultFromId ? 'selected' : ''}>${l.name}</option>`).join('')}
+            ${locations.map(l => `<option value="${l.id}" ${l.id === defaultFromId ? 'selected' : ''}>${escapeHtml(l.name)}</option>`).join('')}
           </select>
         </div>
         <div class="form-group" style="flex:1">
           <label>Hacia</label>
           <select id="tf-to" required>
-            ${locations.map(l => `<option value="${l.id}" ${l.id === defaultToId ? 'selected' : ''}>${l.name}</option>`).join('')}
+            ${locations.map(l => `<option value="${l.id}" ${l.id === defaultToId ? 'selected' : ''}>${escapeHtml(l.name)}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -1236,7 +1235,7 @@ function openQuickSaleForm(variantId, locations, product, variants, container, s
       <div class="form-group">
         <label>Ubicación de venta</label>
         <select id="sf-location" required>
-          ${locations.map(l => `<option value="${l.id}" ${l.id === defaultSaleLocId ? 'selected' : ''}>${l.name}${l.commission_rate > 0 ? ` (${l.commission_rate}% comisión)` : ''}</option>`).join('')}
+          ${locations.map(l => `<option value="${l.id}" ${l.id === defaultSaleLocId ? 'selected' : ''}>${escapeHtml(l.name)}${l.commission_rate > 0 ? ` (${l.commission_rate}% comisión)` : ''}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">

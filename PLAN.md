@@ -43,6 +43,13 @@
 - [x] Inversión en compras: pedidos, envíos, impuestos, total, ROI
 - [x] Selector de período: semana / mes / trimestre
 
+## Gestión de ubicaciones [COMPLETADA]
+- [x] Pantalla Ubicaciones (engranaje en el header): crear, editar, ordenar, desactivar/reactivar
+- [x] Tipos directo / consignación con comisión configurable
+- [x] Ubicación principal (reemplaza "Casa" fija en el código)
+- [x] Desactivar solo con stock en 0 y sin pedidos pendientes (nunca se borra: conserva ventas y visitas)
+- [x] Migración `supabase/add_locations_management.sql` (sort_order, is_default)
+
 ## Fase 5 — Venta online (futura)
 - [ ] Investigar Tiendanube (gratis, ideal Latam) o Shopify Starter ($5/mes)
 - [ ] Integración: webhook venta online → descuenta stock en Supabase
@@ -52,7 +59,7 @@
 - Supabase es fuente de verdad del inventario
 - Schema `mumu` separado del schema `public` (DnD Halo) en la misma BD
 - SKU autogenerado: MU-001-RS-03 (producto-color-talla)
-- Comisión variable por punto de venta (Casa 0%, Marcé 30%, Luan 30%)
+- Comisión variable por punto de venta (Casa 0%, Marcé 30%, Luan 30%), editable desde Ubicaciones
 - No se usan los códigos del Excel original, se generan nuevos
 - Tallas y colores se seleccionan separado → se genera producto cartesiano
 - Solo 1 usuaria por ahora (la dueña), cuenta del novio mientras tanto

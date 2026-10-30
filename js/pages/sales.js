@@ -5,13 +5,14 @@ Router.register('#/sales', async (container) => {
   const sb = getSupabase();
   if (!sb) return;
 
-  // Cargar ubicaciones para filtro y formulario
-  const { data: locations } = await sb.from('locations').select('id, name, type, commission_rate').eq('active', true);
+  // Ubicaciones: el filtro incluye inactivas (ventas históricas); el formulario solo activas
+  const allLocations = await Locations.all(sb);
+  const activeLocations = allLocations.filter(l => l.active);
 
   // FAB para nueva venta
-  addFAB(() => openNewSaleForm(locations, container, sb));
+  addFAB(() => openNewSaleForm(activeLocations, container, sb));
 
-  await renderSalesList(container, sb, locations, {});
+  await renderSalesList(container, sb, allLocations, {});
 });
 
 // ============================================
@@ -58,7 +59,7 @@ async function renderSalesList(container, sb, locations, filters) {
         <div class="form-group" style="flex:1;margin-bottom:0">
           <select id="filter-location">
             <option value="">Todas las ubicaciones</option>
-            ${locations.map(l => `<option value="${l.id}" ${filters.locationId === l.id ? 'selected' : ''}>${l.name}</option>`).join('')}
+            ${locations.map(l => `<option value="${l.id}" ${filters.locationId === l.id ? 'selected' : ''}>${escapeHtml(Locations.label(l))}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -183,7 +184,7 @@ async function openNewSaleForm(locations, container, sb) {
       <div class="form-group">
         <label>Punto de venta</label>
         <select id="ns-location" required>
-          ${locations.map(l => `<option value="${l.id}" data-rate="${l.commission_rate}">${l.name}${l.commission_rate > 0 ? ` (${l.commission_rate}%)` : ''}</option>`).join('')}
+          ${locations.map(l => `<option value="${l.id}" data-rate="${l.commission_rate}">${escapeHtml(l.name)}${l.commission_rate > 0 ? ` (${l.commission_rate}%)` : ''}</option>`).join('')}
         </select>
       </div>
 

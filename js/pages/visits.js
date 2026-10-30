@@ -13,17 +13,7 @@ Router.register('#/visits', async (container) => {
 // Selector de sucursal
 // ============================================
 async function renderLocationPicker(container, sb) {
-  const { data: locations, error } = await sb
-    .from('locations')
-    .select('id, name, type')
-    .eq('active', true)
-    .eq('type', 'consignacion')
-    .order('name');
-
-  if (error) {
-    container.innerHTML = `<p class="text-danger">Error cargando sucursales: ${error.message}</p>`;
-    return;
-  }
+  const locations = (await Locations.active(sb)).filter(l => l.type === 'consignacion');
 
   if (!locations || locations.length === 0) {
     container.innerHTML = `
@@ -39,10 +29,10 @@ async function renderLocationPicker(container, sb) {
     <p class="text-secondary mb-16">¿Qué sucursal vas a visitar?</p>
     <div id="visit-location-list">
       ${locations.map(l => `
-        <div class="card visit-loc-card" data-loc-id="${l.id}" data-loc-name="${l.name}">
+        <div class="card visit-loc-card" data-loc-id="${l.id}" data-loc-name="${escapeHtml(l.name)}">
           <div class="flex-between">
             <div>
-              <div class="list-item-title">${l.name}</div>
+              <div class="list-item-title">${escapeHtml(l.name)}</div>
               <div class="list-item-sub">Consignación</div>
             </div>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -571,7 +561,7 @@ async function renderVisitHistory(container, sb, state) {
       .select('id, location_id, notes, photo_url, items, diff_count, created_at, archived_at')
       .order('created_at', { ascending: false })
       .limit(500),
-    sb.from('locations').select('id, name, type').eq('active', true).eq('type', 'consignacion').order('name')
+    Locations.all(sb).then(data => ({ data }))
   ]);
 
   if (sessionsRes.error) {
@@ -579,8 +569,10 @@ async function renderVisitHistory(container, sb, state) {
     return;
   }
 
-  const locations = locsRes.data || [];
-  const locById = Object.fromEntries(locations.map(l => [l.id, l]));
+  // Todas para nombrar visitas archivadas de sucursales ya desactivadas;
+  // el resumen de activas solo lista consignaciones activas
+  const locById = Object.fromEntries((locsRes.data || []).map(l => [l.id, l]));
+  const locations = (locsRes.data || []).filter(l => l.active && l.type === 'consignacion');
   const allSessions = sessionsRes.data || [];
   const activeSessions = allSessions.filter(s => !s.archived_at);
   const archivedSessions = allSessions.filter(s => s.archived_at);
