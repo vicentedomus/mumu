@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mumu-v9';
+const CACHE_NAME = 'mumu-v10';
 const ASSETS = [
   '/',
   '/index.html',
@@ -36,9 +36,10 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  // Skip API calls
-  if (e.request.url.includes('supabase.co')) {
-    e.respondWith(fetch(e.request));
+  // No interceptar llamadas a Supabase ni nada que no sea GET: el navegador las
+  // manda directo. Re-enviarlas con fetch(e.request) hace que Safari iOS pierda
+  // el body de los uploads multipart (llegaban a Storage con Content-Length: 0).
+  if (e.request.method !== 'GET' || e.request.url.includes('supabase.co')) {
     return;
   }
   // Network first, fallback to cache
