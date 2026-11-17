@@ -108,6 +108,56 @@ const UI = {
     }, 2500);
   },
 
+  // Prepara una foto para subir a Storage: copia los bytes a memoria (en iOS la
+  // referencia al File del carrete puede quedar ilegible después) y la reduce a
+  // JPEG de máx. maxDim px para no topar con el límite de tamaño del bucket.
+  // Devuelve un Blob; si no se puede comprimir, devuelve la foto original.
+  async prepareImage(file, { maxDim = 1600, quality = 0.82 } = {}) {
+    const emptyMsg = 'No se pudo leer la foto. Vuelve a elegirla.';
+    if (!file || file.size === 0) throw new Error(emptyMsg);
+    let bytes;
+    try { bytes = await file.arrayBuffer(); } catch (_) { throw new Error(emptyMsg); }
+    if (!bytes || bytes.byteLength === 0) throw new Error(emptyMsg);
+    const original = new Blob([bytes], { type: file.type || 'image/jpeg' });
+
+    try {
+      const url = URL.createObjectURL(original);
+      let img;
+      try {
+        img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.onload = () => resolve(i);
+          i.onerror = () => reject(new Error('decode'));
+          i.src = url;
+        });
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.max(1, Math.round(img.naturalWidth * scale));
+      const h = Math.max(1, Math.round(img.naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff'; // fondo blanco para PNG con transparencia
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      const out = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+      if (out && out.size > 0 && (out.size < original.size || scale < 1)) return out;
+    } catch (_) {
+      // Si no se puede decodificar/comprimir, se sube la original
+    }
+    return original;
+  },
+
+  // Extensión de archivo según el tipo MIME del blob a subir
+  imageExt(blob) {
+    if (blob.type === 'image/png') return 'png';
+    if (blob.type === 'image/webp') return 'webp';
+    return 'jpg';
+  },
+
   // Protección contra doble submit — deshabilita botón durante operación async
   async withLoading(btn, fn) {
     if (btn.disabled) return;

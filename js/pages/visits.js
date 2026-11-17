@@ -242,13 +242,20 @@ async function renderVisitView(container, sb, location) {
 
       // Subir foto si hay archivo nuevo
       let photoUrl = document.getElementById('visit-photo-url').value || null;
-      const file = document.getElementById('visit-photo-input').files[0];
+      const photoInputEl = document.getElementById('visit-photo-input');
+      const file = photoInputEl.files[0];
       if (file) {
-        const ext = file.name.split('.').pop().toLowerCase();
-        const fileName = `${location.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        let photoBlob;
+        try {
+          photoBlob = await (photoInputEl._prepared || UI.prepareImage(file));
+        } catch (err) {
+          UI.toast(err.message, 'error');
+          return;
+        }
+        const fileName = `${location.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${UI.imageExt(photoBlob)}`;
         const { error: upErr } = await sb.storage
           .from('visit-photos')
-          .upload(fileName, file, { contentType: file.type });
+          .upload(fileName, photoBlob, { contentType: photoBlob.type });
         if (upErr) { UI.toast('Error subiendo foto: ' + upErr.message, 'error'); return; }
         const { data: urlData } = sb.storage.from('visit-photos').getPublicUrl(fileName);
         photoUrl = urlData.publicUrl;
@@ -490,6 +497,9 @@ function setupVisitPhoto() {
   input.addEventListener('change', () => {
     const file = input.files[0];
     if (!file) return;
+    // Preparar (leer + comprimir) en cuanto se elige, mientras el File sigue legible
+    input._prepared = UI.prepareImage(file);
+    input._prepared.catch(() => {});
     const reader = new FileReader();
     reader.onload = (ev) => {
       area.innerHTML = `

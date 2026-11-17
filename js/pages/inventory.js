@@ -395,6 +395,9 @@ async function openProductForm(product, container, sb) {
   photoInput.addEventListener('change', () => {
     const file = photoInput.files[0];
     if (!file) return;
+    // Preparar (leer + comprimir) en cuanto se elige, mientras el File sigue legible
+    photoInput._prepared = UI.prepareImage(file);
+    photoInput._prepared.catch(() => {});
     const reader = new FileReader();
     reader.onload = (ev) => {
       photoArea.innerHTML = `
@@ -576,13 +579,20 @@ async function openProductForm(product, container, sb) {
     const sale_price = parseFloat(document.getElementById('pf-price').value) || 0;
     // Subir foto si hay archivo nuevo
     let image_url = document.getElementById('pf-image').value.trim() || null;
-    const photoFile = document.getElementById('pf-photo-input').files[0];
+    const photoInputEl = document.getElementById('pf-photo-input');
+    const photoFile = photoInputEl.files[0];
     if (photoFile) {
-      const ext = photoFile.name.split('.').pop().toLowerCase();
-      const fileName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-      const { data: uploadData, error: uploadError } = await sb.storage
+      let photoBlob;
+      try {
+        photoBlob = await (photoInputEl._prepared || UI.prepareImage(photoFile));
+      } catch (err) {
+        UI.toast(err.message, 'error');
+        return;
+      }
+      const fileName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${UI.imageExt(photoBlob)}`;
+      const { error: uploadError } = await sb.storage
         .from('product-images')
-        .upload(fileName, photoFile, { contentType: photoFile.type });
+        .upload(fileName, photoBlob, { contentType: photoBlob.type });
       if (uploadError) {
         UI.toast('Error subiendo foto: ' + uploadError.message, 'error');
         return;
